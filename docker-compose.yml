@@ -1,40 +1,83 @@
 # MediaHub Docker Compose
-# 使用方式:
-#   1. 复制 .env.example 为 .env 并修改 (尤其是 JWT_SECRET)
-#   2. 修改下面的 volumes 挂载,把你的媒体目录映射进容器
+#
+# 默认从 GitHub Container Registry 拉取最新镜像,支持自动更新。
+#
+# 快速使用:
+#   1. 复制 .env.example 为 .env 并修改 JWT_SECRET
+#   2. 修改下面 volumes 把你的媒体目录映射进容器
 #   3. docker compose up -d
+#
+# 开发者本地构建(改代码后):
+#   docker compose build mediahub --no-cache
+#   docker compose up -d
+#
+# 强制升级到最新版:
+#   docker compose pull && docker compose up -d
+#
+# 自动更新(可选,见下方 watchtower 服务,默认注释掉)
 
 services:
   mediahub:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # 默认拉远程镜像 (ghcr.io 上 GitHub Actions 自动构建好的)
+    image: ghcr.io/boylengit/media-manager:${MEDIAHUB_TAG:-latest}
+    # 如果你想本地构建(改了代码),取消下面的注释
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: mediahub
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${MEDIAHUB_PORT:-8000}:8000"
     environment:
-      # 必改:JWT 密钥,生产环境必须用强随机值
+      # 必改:JWT 密钥,用 openssl rand -hex 32 生成
       JWT_SECRET: ${JWT_SECRET:-CHANGE-ME-USE-OPENSSL-RAND-HEX-32}
-      JWT_ACCESS_TTL_MINUTES: 15
-      JWT_REFRESH_TTL_DAYS: 7
+      JWT_ACCESS_TTL_MINUTES: ${JWT_ACCESS_TTL_MINUTES:-15}
+      JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-7}
 
-      # CORS 允许的源,逗号分隔
+      # CORS,逗号分隔
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
 
-      # 可选:在容器构建前预设下载器/Jellyfin
-      # 推荐留空,在 Web 设置页里改
+      # 其它配置(qBittorrent/Jellyfin)留空,在 Web 设置页里配置
       QBITTORRENT_URL: ""
       JELLYFIN_URL: ""
+
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      # SQLite 数据持久化(重要!)
+      # SQLite 数据持久化(必须!)
       - ./data:/app/backend/data
 
-      # 媒体目录:挂载你的 NAS 卷,可挂多个
-      # 例如群晖 NAS:
-      # - /volume1/media:/media:ro
-      # - /volume1/downloads:/downloads
+      # 媒体目录:挂你的 NAS 卷,可挂多个,容器内统一是 /media
+      # 群晖示例:
+      #   - /volume1/media:/media:ro
+      #   - /volume1/downloads/complete:/downloads:rw
       - ./test-media:/media:ro
 
-    # 群晖建议指定与 NAS 用户相同的 PUID/PGID 来避免权限问题
+    # 容器与宿主机用户权限对齐(尤其是群晖,避免文件读不到)
+    # 在 NAS 上 SSH 执行 `id <你的用户>` 看 uid/gid
     # user: "1026:100"
+
+    # 加入 Watchtower 自动更新的标签
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # ============================================================
+  # Watchtower 自动更新 (可选)
+  # 取消下面的注释即可启用,会每 24h 检查一次远程镜像更新
+  # ============================================================
+  # watchtower:
+  #   image: containrrr/watchtower
+  #   container_name: watchtower
+  #   restart: unless-stopped
+  #   environment:
+  #     # 每天凌晨 4 点检查 (cron 表达式)
+  #     WATCHTOWER_SCHEDULE: "0 0 4 * * *"
+  #     # 只更新加了 enable=true 标签的容器,避免误伤
+  #     WATCHTOWER_LABEL_ENABLE: "true"
+  #     # 清理旧镜像
+  #     WATCHTOWER_CLEANUP: "true"
+  #     # 通知 (可选,支持邮件/Slack/Webhook,不配就只打日志)
+  #     # WATCHTOWER_NOTIFICATIONS: shoutrrr
+  #     # WATCHTOWER_NOTIFICATION_URL: telegram://...
+  #     TZ: ${TZ:-Asia/Shanghai}
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
