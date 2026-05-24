@@ -1,0 +1,28 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+
+# Vite 缓存
+.vite/
+
+# unplugin 自动生成的类型声明 (每次 dev 都会重建)
+auto-imports.d.ts
+components.d.ts
+
+# 环境变量
+.env
+.env.local
+*.local
+!.env.example
+
+# 系统
+.DS_Store
+
+# 日志
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

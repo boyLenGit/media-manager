@@ -1,0 +1,76 @@
+# =====================================================
+# MediaHub 全局忽略规则
+# 子目录另有 backend/.gitignore 与 frontend/.gitignore 做更细的补充
+# =====================================================
+
+# ------- 系统 / 编辑器 -------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# ------- 日志 / 临时 -------
+*.log
+*.pid
+*.seed
+*.pid.lock
+tmp/
+temp/
+
+# ------- 环境变量 (敏感) -------
+# 只提交 .env.example,不提交真实 .env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ------- 运行时数据 -------
+# 数据库、缓存、上传目录等
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ------- 依赖 -------
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ------- 构建产物 -------
+dist/
+build/
+*.egg-info/
+*.egg
+
+# ------- 测试 / 工具缓存 -------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+coverage/
+.coverage
+htmlcov/
+.tox/
+
+# ------- 前端开发 -------
+.vite/
+# unplugin-auto-import / unplugin-vue-components 自动生成的类型声明
+frontend/auto-imports.d.ts
+frontend/components.d.ts
+
+# ------- Docker 持久化卷 -------
+test-media/
+mediahub-data/
+jackett-config/
