@@ -13,6 +13,10 @@ RUN npm run build
 # Stage 2: Python 运行时
 FROM python:3.11-slim AS runtime
 
+# 构建参数(由 CI 注入,本地构建可不传)
+ARG BUILD_VERSION=dev
+ARG BUILD_COMMIT=unknown
+
 # 系统依赖:ffmpeg(可选,用于媒体探测)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
@@ -40,6 +44,10 @@ COPY backend/app/ ./backend/app/
 # 从前端构建阶段复制 dist
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
+# 写入版本信息(运行时可读取)
+RUN echo "$BUILD_VERSION" > /app/VERSION && \
+    echo "$BUILD_COMMIT" > /app/COMMIT
+
 # 数据卷
 RUN mkdir -p /app/backend/data
 VOLUME ["/app/backend/data"]
@@ -51,8 +59,17 @@ ENV APP_HOST=0.0.0.0 \
     DATA_DIR=/app/backend/data \
     DATABASE_URL=sqlite:////app/backend/data/mediahub.db \
     STATIC_DIR=/app/frontend/dist \
+    BUILD_VERSION=${BUILD_VERSION} \
+    BUILD_COMMIT=${BUILD_COMMIT} \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
+
+# OCI 标签 (CI 也会通过 metadata-action 覆盖,本地构建时也有兜底)
+LABEL org.opencontainers.image.title="MediaHub" \
+      org.opencontainers.image.description="NAS 资源库与视频管理系统" \
+      org.opencontainers.image.source="https://github.com/boyLenGit/media-manager" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${BUILD_COMMIT}"
 
 EXPOSE 8000
 
