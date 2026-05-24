@@ -1,0 +1,40 @@
+# MediaHub Docker Compose
+# 使用方式:
+#   1. 复制 .env.example 为 .env 并修改 (尤其是 JWT_SECRET)
+#   2. 修改下面的 volumes 挂载,把你的媒体目录映射进容器
+#   3. docker compose up -d
+
+services:
+  mediahub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mediahub
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # 必改:JWT 密钥,生产环境必须用强随机值
+      JWT_SECRET: ${JWT_SECRET:-CHANGE-ME-USE-OPENSSL-RAND-HEX-32}
+      JWT_ACCESS_TTL_MINUTES: 15
+      JWT_REFRESH_TTL_DAYS: 7
+
+      # CORS 允许的源,逗号分隔
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+
+      # 可选:在容器构建前预设下载器/Jellyfin
+      # 推荐留空,在 Web 设置页里改
+      QBITTORRENT_URL: ""
+      JELLYFIN_URL: ""
+    volumes:
+      # SQLite 数据持久化(重要!)
+      - ./data:/app/backend/data
+
+      # 媒体目录:挂载你的 NAS 卷,可挂多个
+      # 例如群晖 NAS:
+      # - /volume1/media:/media:ro
+      # - /volume1/downloads:/downloads
+      - ./test-media:/media:ro
+
+    # 群晖建议指定与 NAS 用户相同的 PUID/PGID 来避免权限问题
+    # user: "1026:100"

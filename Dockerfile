@@ -1,0 +1,65 @@
+# MediaHub 多阶段构建
+# Stage 1: 构建前端
+FROM node:22-alpine AS frontend-build
+
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm ci --no-audit --no-fund
+
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Python 运行时
+FROM python:3.11-slim AS runtime
+
+# 系统依赖:ffmpeg(可选,用于媒体探测)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Python 依赖
+COPY backend/pyproject.toml ./backend/
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    fastapi \
+    'uvicorn[standard]' \
+    sqlmodel \
+    pydantic-settings \
+    apscheduler \
+    httpx \
+    python-multipart \
+    aiofiles \
+    'argon2-cffi>=23.1.0' \
+    'pyjwt>=2.10.0'
+
+# 复制后端代码
+COPY backend/app/ ./backend/app/
+
+# 从前端构建阶段复制 dist
+COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
+
+# 数据卷
+RUN mkdir -p /app/backend/data
+VOLUME ["/app/backend/data"]
+
+# 配置环境变量默认值
+ENV APP_HOST=0.0.0.0 \
+    APP_PORT=8000 \
+    APP_DEBUG=false \
+    DATA_DIR=/app/backend/data \
+    DATABASE_URL=sqlite:////app/backend/data/mediahub.db \
+    STATIC_DIR=/app/frontend/dist \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8000
+
+WORKDIR /app/backend
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')" || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
