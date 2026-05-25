@@ -21,6 +21,7 @@ from app.api import (
     settings as settings_api,
     stats,
     tags,
+    thumbnails,
 )
 from app.core.deps import require_user
 
@@ -29,6 +30,8 @@ api_router = APIRouter(prefix="/api")
 # --- 公开 ---
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+# 缩略图也公开访问 (图片资源不需要鉴权,且 URL 用 media_id 不可枚举出敏感信息)
+api_router.include_router(thumbnails.router, prefix="/thumbnails", tags=["thumbnails"])
 
 # --- 需要登录 ---
 protected = [Depends(require_user)]

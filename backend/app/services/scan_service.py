@@ -24,7 +24,7 @@ from sqlmodel import Session, select
 from app.core.file_types import VIDEO_EXTENSIONS, classify_file
 from app.db.session import engine
 from app.models import FileAsset, MediaFile, MediaItem, ScanJob, ScanLog, ScanPath
-from app.services import ffprobe_service
+from app.services import ffprobe_service, thumbnail_service
 from app.services.filename_parser import parse_filename
 from app.services.hashing import partial_hash
 
@@ -219,7 +219,6 @@ async def run_scan_job(scan_path_id: int) -> None:
 
     # Phase 3: 逐文件处理
     new_count = updated_count = 0
-    probe_targets: list[tuple[int, str]] = []  # (file_asset_id, abs_path)
 
     for idx, f in enumerate(files):
         try:
@@ -231,9 +230,6 @@ async def run_scan_job(scan_path_id: int) -> None:
                     continue
                 _ensure_media_item_for_video(session, asset, sp)  # type: ignore[arg-type]
                 session.commit()
-
-                if asset.file_type == "video" and is_new:
-                    probe_targets.append((asset.id, asset.path))  # type: ignore[arg-type]
 
                 if is_new:
                     new_count += 1
@@ -272,37 +268,85 @@ async def run_scan_job(scan_path_id: int) -> None:
             _log(session, job_id, f"marked {missing} files as missing")
         session.commit()
 
-    # Phase 5: ffprobe 异步探测(并发上限 4,避免吃满 IO)
-    if ffprobe_service.is_available() and probe_targets:
-        sem = asyncio.Semaphore(4)
+    # Phase 5: ffprobe 探测 + 缩略图生成
+    # 收集所有视频文件,只要缺探测数据 / 缺缩略图都重做一次
+    enrich_targets: list[tuple[int, str, int | None]] = []  # (asset_id, path, media_id)
+    with Session(engine) as session:
+        rows = session.exec(
+            select(FileAsset, MediaFile)
+            .join(MediaFile, MediaFile.file_asset_id == FileAsset.id, isouter=True)  # type: ignore[arg-type]
+            .where(
+                FileAsset.scan_path_id == scan_path_id,
+                FileAsset.file_type == "video",
+                FileAsset.missing == False,  # noqa: E712
+            )
+        ).all()
+        thumbnail_dir = thumbnail_service.get_thumbnail_dir()  # 触发目录创建
+        for fa, mf in rows:
+            mid = mf.media_item_id if mf else None
+            need_probe = not fa.media_probe_json
+            need_thumb = (
+                mid is not None
+                and not thumbnail_service.has_thumbnail(mid)
+            )
+            if need_probe or need_thumb:
+                enrich_targets.append((fa.id, fa.path, mid))  # type: ignore[arg-type]
 
-        async def _probe_one(asset_id: int, p: str) -> None:
+    if enrich_targets and (
+        ffprobe_service.is_available() or ffprobe_service.is_ffmpeg_available()
+    ):
+        sem = asyncio.Semaphore(2)  # ffmpeg 比较吃 CPU,降并发到 2
+
+        async def _enrich_one(asset_id: int, p: str, media_id: int | None) -> None:
             async with sem:
-                result = await ffprobe_service.probe(p)
-                if not result:
-                    return
-                with Session(engine) as session:
-                    asset = session.get(FileAsset, asset_id)
-                    if not asset:
-                        return
-                    asset.media_probe_json = result.raw_json
-                    session.add(asset)
+                # 1. 探测
+                result = None
+                if ffprobe_service.is_available():
+                    result = await ffprobe_service.probe(p)
 
-                    mf = session.exec(
-                        select(MediaFile).where(MediaFile.file_asset_id == asset_id)
-                    ).first()
-                    if mf:
-                        mf.duration_seconds = result.duration_seconds
-                        mf.width = result.width
-                        mf.height = result.height
-                        mf.video_codec = result.video_codec
-                        mf.audio_codec = result.audio_codec
-                        if not mf.container and result.container:
-                            mf.container = result.container
-                        session.add(mf)
-                    session.commit()
+                if result:
+                    with Session(engine) as session:
+                        asset = session.get(FileAsset, asset_id)
+                        if asset:
+                            asset.media_probe_json = result.raw_json
+                            session.add(asset)
+                        mf = session.exec(
+                            select(MediaFile).where(MediaFile.file_asset_id == asset_id)
+                        ).first()
+                        if mf:
+                            mf.duration_seconds = result.duration_seconds
+                            mf.width = result.width
+                            mf.height = result.height
+                            mf.video_codec = result.video_codec
+                            mf.audio_codec = result.audio_codec
+                            if not mf.container and result.container:
+                                mf.container = result.container
+                            session.add(mf)
+                        session.commit()
 
-        await asyncio.gather(*(_probe_one(aid, p) for aid, p in probe_targets))
+                # 2. 缩略图
+                if (
+                    media_id is not None
+                    and ffprobe_service.is_ffmpeg_available()
+                    and not thumbnail_service.has_thumbnail(media_id)
+                ):
+                    duration = result.duration_seconds if result else None
+                    # 从视频 10% 处取(避免黑场片头),最低 1 秒
+                    seek = max(1.0, (duration or 60.0) * 0.1)
+                    out_path = thumbnail_service.get_thumbnail_path(media_id)
+                    ok = await ffprobe_service.generate_thumbnail(
+                        p, out_path, seek_seconds=seek
+                    )
+                    if ok:
+                        # 写 cover_path
+                        with Session(engine) as session:
+                            mi = session.get(MediaItem, media_id)
+                            if mi and not mi.cover_path:
+                                mi.cover_path = thumbnail_service.get_thumbnail_url(media_id)
+                                session.add(mi)
+                                session.commit()
+
+        await asyncio.gather(*(_enrich_one(*t) for t in enrich_targets))
 
     # Phase 6: 收尾
     with Session(engine) as session:

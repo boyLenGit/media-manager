@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 
 from app.core.config import get_settings
 from app.core.deps import require_user
-from app.core.file_types import is_web_playable
+from app.core.file_types import is_web_playable_by_ext
 from app.db.session import get_session
 from app.models import (
     AppSetting,
@@ -28,6 +28,7 @@ from app.models import (
     User,
 )
 from app.providers.player import factory as jellyfin_factory
+from app.services.ffprobe_service import is_codec_web_playable
 
 router = APIRouter()
 
@@ -118,7 +119,28 @@ def get_play_options(media_id: int, session: Session = Depends(get_session)) -> 
 
     files_payload: list[dict] = []
     for mf, fa in rows:
-        web_ok = is_web_playable(fa.extension or "") and not fa.missing
+        # 容器层判断 (扩展名)
+        container_ok = is_web_playable_by_ext(fa.extension or "") and not fa.missing
+        # 编码层判断 (ffprobe 探测过才知道)
+        codec_known = mf.video_codec is not None
+        codec_ok = is_codec_web_playable(mf.video_codec) if codec_known else None
+
+        # 综合判断:
+        # - 没探测过 → 信任扩展名 (兼容老数据,但前端会显示"未知")
+        # - 探测过 → 容器和编码都对才行
+        if codec_known:
+            web_ok = container_ok and bool(codec_ok)
+        else:
+            web_ok = container_ok
+
+        # 不可播原因(给前端提示用)
+        web_unplayable_reason = None
+        if fa.missing:
+            web_unplayable_reason = "文件失踪"
+        elif not container_ok:
+            web_unplayable_reason = f"容器 {fa.extension} 不被浏览器支持"
+        elif codec_known and not codec_ok:
+            web_unplayable_reason = f"视频编码 {mf.video_codec} 不被浏览器支持,请用本地播放器"
 
         opts: list[dict] = []
         for t in targets:
@@ -143,10 +165,13 @@ def get_play_options(media_id: int, session: Session = Depends(get_session)) -> 
                 "is_primary": mf.is_primary,
                 "quality": mf.quality,
                 "container": mf.container,
+                "video_codec": mf.video_codec,
+                "audio_codec": mf.audio_codec,
                 "duration_seconds": mf.duration_seconds,
                 "width": mf.width,
                 "height": mf.height,
                 "web_playable": web_ok,
+                "web_unplayable_reason": web_unplayable_reason,
                 "options": opts,
             }
         )
