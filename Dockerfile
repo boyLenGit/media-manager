@@ -1,4 +1,4 @@
-# MediaHub 多阶段构建
+# Media Manager 多阶段构建
 #
 # 关键优化:前端构建阶段强制使用 BUILDPLATFORM (执行 buildx 的机器原生架构,
 # 通常是 amd64),而不是目标架构。前端只产出静态 HTML/JS/CSS 没有架构差异,
@@ -77,7 +77,7 @@ ENV APP_HOST=0.0.0.0 \
     APP_PORT=8000 \
     APP_DEBUG=false \
     DATA_DIR=/app/backend/data \
-    DATABASE_URL=sqlite:////app/backend/data/mediahub.db \
+    DATABASE_URL=sqlite:////app/backend/data/media_manager.db \
     STATIC_DIR=/app/frontend/dist \
     BUILD_VERSION=${BUILD_VERSION} \
     BUILD_COMMIT=${BUILD_COMMIT} \
@@ -85,7 +85,7 @@ ENV APP_HOST=0.0.0.0 \
     PYTHONDONTWRITEBYTECODE=1
 
 # OCI 标签 (CI 也会通过 metadata-action 覆盖,本地构建时也有兜底)
-LABEL org.opencontainers.image.title="MediaHub" \
+LABEL org.opencontainers.image.title="Media Manager" \
       org.opencontainers.image.description="NAS 资源库与视频管理系统" \
       org.opencontainers.image.source="https://github.com/boyLenGit/media-manager" \
       org.opencontainers.image.version="${BUILD_VERSION}" \

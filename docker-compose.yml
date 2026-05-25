@@ -1,4 +1,4 @@
-# MediaHub Docker Compose
+# Media Manager Docker Compose
 #
 # 默认从 GitHub Container Registry 拉取最新镜像,支持自动更新。
 #
@@ -8,7 +8,7 @@
 #   3. docker compose up -d
 #
 # 开发者本地构建(改代码后):
-#   docker compose build mediahub --no-cache
+#   docker compose build media-manager --no-cache
 #   docker compose up -d
 #
 # 强制升级到最新版:
@@ -17,17 +17,17 @@
 # 自动更新(可选,见下方 watchtower 服务,默认注释掉)
 
 services:
-  mediahub:
+  media-manager:
     # 默认拉远程镜像 (ghcr.io 上 GitHub Actions 自动构建好的)
-    image: ghcr.io/boylengit/media-manager:${MEDIAHUB_TAG:-latest}
+    image: ghcr.io/boylengit/media-manager:${MEDIA_MANAGER_TAG:-latest}
     # 如果你想本地构建(改了代码),取消下面的注释
     # build:
     #   context: .
     #   dockerfile: Dockerfile
-    container_name: mediahub
+    container_name: media-manager
     restart: unless-stopped
     ports:
-      - "${MEDIAHUB_PORT:-8000}:8000"
+      - "${MEDIA_MANAGER_PORT:-8000}:8000"
     environment:
       # 必改:JWT 密钥,用 openssl rand -hex 32 生成
       JWT_SECRET: ${JWT_SECRET:-CHANGE-ME-USE-OPENSSL-RAND-HEX-32}

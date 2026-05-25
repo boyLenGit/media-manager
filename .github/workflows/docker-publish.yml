@@ -62,7 +62,7 @@ jobs:
             # 短 commit SHA
             type=sha,format=short
           labels: |
-            org.opencontainers.image.title=MediaHub
+            org.opencontainers.image.title=Media Manager
             org.opencontainers.image.description=NAS 资源库与视频管理系统
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.licenses=MIT
