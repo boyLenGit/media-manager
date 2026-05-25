@@ -105,7 +105,7 @@ onMounted(async () => {
     <el-aside :width="collapse ? '64px' : '220px'" class="layout-aside">
       <div class="brand">
         <el-icon :size="22"><Connection /></el-icon>
-        <span v-if="!collapse" class="brand-name">MediaHub</span>
+        <span v-if="!collapse" class="brand-name">Media Manager</span>
       </div>
       <el-menu
         :default-active="activeMenu"

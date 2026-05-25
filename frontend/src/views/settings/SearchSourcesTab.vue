@@ -143,7 +143,7 @@ onMounted(fetch)
       type="warning"
       :closable="false"
       style="margin-bottom: 12px"
-      title="MediaHub 不内置任何搜索源,请自行配置 Jackett / Prowlarr 等服务,并确保你下载的资源拥有合法授权。"
+      title="Media Manager 不内置任何搜索源,请自行配置 Jackett / Prowlarr 等服务,并确保你下载的资源拥有合法授权。"
     />
 
     <el-table :data="list" v-loading="loading" stripe>

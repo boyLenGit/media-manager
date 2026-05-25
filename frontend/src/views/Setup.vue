@@ -79,7 +79,7 @@ const submit = async () => {
     <el-card class="card" v-loading="checking">
       <div class="brand">
         <el-icon :size="32" color="#3b82f6"><Connection /></el-icon>
-        <h1 class="title">欢迎使用 MediaHub</h1>
+        <h1 class="title">欢迎使用 Media Manager</h1>
         <div class="subtitle">首次启动,请创建管理员账号</div>
       </div>
 

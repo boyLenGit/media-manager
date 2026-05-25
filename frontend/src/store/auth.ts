@@ -2,8 +2,27 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi, type UserInfo } from '@/api/auth'
 
-const TOKEN_KEY = 'mediahub_access_token'
-const REFRESH_KEY = 'mediahub_refresh_token'
+const TOKEN_KEY = 'media_manager_access_token'
+const REFRESH_KEY = 'media_manager_refresh_token'
+
+// 一次性把旧品牌的 localStorage key 迁到新品牌
+// MediaHub → Media Manager (rebrand 2026-05)
+const LEGACY_TOKEN_KEY = 'mediahub_access_token'
+const LEGACY_REFRESH_KEY = 'mediahub_refresh_token'
+
+function migrateLegacyKeys() {
+  for (const [legacy, current] of [
+    [LEGACY_TOKEN_KEY, TOKEN_KEY],
+    [LEGACY_REFRESH_KEY, REFRESH_KEY],
+  ]) {
+    const legacyValue = localStorage.getItem(legacy)
+    if (legacyValue && !localStorage.getItem(current)) {
+      localStorage.setItem(current, legacyValue)
+    }
+    if (legacyValue) localStorage.removeItem(legacy)
+  }
+}
+migrateLegacyKeys()
 
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref<string>(localStorage.getItem(TOKEN_KEY) || '')

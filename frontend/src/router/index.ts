@@ -109,7 +109,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   const title = (to.meta?.title as string | undefined) || ''
-  document.title = title ? `${title} · MediaHub` : 'MediaHub'
+  document.title = title ? `${title} · Media Manager` : 'Media Manager'
 })
 
 export default router

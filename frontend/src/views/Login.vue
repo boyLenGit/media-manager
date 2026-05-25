@@ -46,7 +46,7 @@ const submit = async () => {
     <el-card class="card">
       <div class="brand">
         <el-icon :size="32" color="#3b82f6"><Connection /></el-icon>
-        <h1 class="title">MediaHub</h1>
+        <h1 class="title">Media Manager</h1>
         <div class="subtitle">NAS 资源库与视频管理系统</div>
       </div>
 

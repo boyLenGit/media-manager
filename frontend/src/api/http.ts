@@ -24,7 +24,7 @@ const isPublic = (url?: string) => {
 // ---- 请求拦截器:注入 Authorization ----
 http.interceptors.request.use((config) => {
   if (!isPublic(config.url)) {
-    const token = localStorage.getItem('mediahub_access_token')
+    const token = localStorage.getItem('media_manager_access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -41,12 +41,12 @@ export const setAuthFailureHandler = (h: () => void) => {
 }
 
 const tryRefresh = async (): Promise<string> => {
-  const refreshToken = localStorage.getItem('mediahub_refresh_token')
+  const refreshToken = localStorage.getItem('media_manager_refresh_token')
   if (!refreshToken) throw new Error('no_refresh_token')
   const resp = await axios.post('/api/auth/refresh', { refresh_token: refreshToken })
   const { access_token, refresh_token } = resp.data
-  localStorage.setItem('mediahub_access_token', access_token)
-  localStorage.setItem('mediahub_refresh_token', refresh_token)
+  localStorage.setItem('media_manager_access_token', access_token)
+  localStorage.setItem('media_manager_refresh_token', refresh_token)
   return access_token
 }
 
