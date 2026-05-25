@@ -14,6 +14,7 @@ from app.api import (
     health,
     jellyfin,
     library,
+    library_tools,
     media_types,
     playback,
     scan,
@@ -37,6 +38,7 @@ api_router.include_router(thumbnails.router, prefix="/thumbnails", tags=["thumbn
 protected = [Depends(require_user)]
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"], dependencies=protected)
 api_router.include_router(library.router, prefix="/media", tags=["library"], dependencies=protected)
+api_router.include_router(library_tools.router, prefix="/library", tags=["library-tools"], dependencies=protected)
 # files 路由内部各端点自己决定鉴权方式 (stream 走签名 token,其他走 require_user)
 api_router.include_router(files.router, prefix="/files", tags=["files"])
 api_router.include_router(scan.router, prefix="/scan", tags=["scan"], dependencies=protected)
