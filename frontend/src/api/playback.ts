@@ -15,10 +15,13 @@ export interface PlaybackFileEntry {
   is_primary: boolean
   quality?: string
   container?: string
+  video_codec?: string
+  audio_codec?: string
   duration_seconds?: number
   width?: number
   height?: number
   web_playable: boolean
+  web_unplayable_reason?: string | null
   options: PlaybackOption[]
 }
 

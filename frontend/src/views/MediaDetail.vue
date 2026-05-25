@@ -61,6 +61,15 @@ const primaryWebPlayable = computed(() => {
   return entry?.web_playable || false
 })
 
+// 主文件不可网播的原因(后端给出的精确说明)
+const primaryUnplayableReason = computed(() => {
+  if (!primaryFile.value || !playOpts.value) return null
+  const entry = playOpts.value.files.find(
+    (f) => f.file_asset_id === primaryFile.value!.file_asset_id,
+  )
+  return entry?.web_unplayable_reason || null
+})
+
 // 「本地播放」下拉选项 = 所有非 web 选项
 const localOptions = computed(() => {
   if (!playOpts.value) return []
@@ -115,7 +124,9 @@ const openWebPlayer = (fileId: number, filename: string, duration?: number) => {
 const playPrimary = () => {
   if (!primaryFile.value) return
   if (!primaryWebPlayable.value) {
-    ElMessage.warning('该文件容器不支持网页直放,请使用「本地播放」中的方式')
+    ElMessage.warning(
+      primaryUnplayableReason.value || '该文件无法在浏览器直放,请使用「本地播放」',
+    )
     return
   }
   openWebPlayer(
@@ -123,6 +134,17 @@ const playPrimary = () => {
     primaryFile.value.filename,
     primaryFile.value.duration_seconds,
   )
+}
+
+const playFile = (fileId: number, filename: string, duration?: number) => {
+  const entry = playOpts.value?.files.find((f) => f.file_asset_id === fileId)
+  if (!entry?.web_playable) {
+    ElMessage.warning(
+      entry?.web_unplayable_reason || '该文件无法在浏览器直放,请使用「本地播放」',
+    )
+    return
+  }
+  openWebPlayer(fileId, filename, duration)
 }
 
 // 处理本地/外部播放选项
@@ -197,15 +219,8 @@ const copyPath = async (path: string) => {
   }
 }
 
-// 文件列表中的「网页播放」按钮
-const playFile = (fileId: number, filename: string, duration?: number) => {
-  const entry = playOpts.value?.files.find((f) => f.file_asset_id === fileId)
-  if (!entry?.web_playable) {
-    ElMessage.warning('该文件容器不支持网页直放,请使用「本地播放」复制链接')
-    return
-  }
-  openWebPlayer(fileId, filename, duration)
-}
+// 文件列表中的「网页播放」按钮 (使用上面已定义的 playFile)
+// 注:为复用 reason 提示,playFile 已上移到 playPrimary 后
 
 const toggleFavorite = async () => {
   if (!media.value) return
@@ -268,8 +283,15 @@ onMounted(fetch)
               </el-button>
 
               <!-- 本地播放下拉:复制链接 / SMB / 本地路径 / Jellyfin / 自定义协议 -->
-              <el-dropdown trigger="click" :disabled="localOptions.length === 0 && !primaryFile">
-                <el-button size="large" :icon="Monitor">
+              <el-dropdown
+                trigger="click"
+                :disabled="localOptions.length === 0 && !primaryFile"
+              >
+                <el-button
+                  size="large"
+                  :icon="Monitor"
+                  :type="!primaryWebPlayable ? 'warning' : 'default'"
+                >
                   本地播放<el-icon class="el-icon--right">▾</el-icon>
                 </el-button>
                 <template #dropdown>
@@ -321,6 +343,19 @@ onMounted(fetch)
 
               <el-button size="large" @click="editOpen = true">编辑</el-button>
             </div>
+
+            <!-- 不可网页直放时的精确原因提示 -->
+            <el-alert
+              v-if="primaryFile && !primaryWebPlayable && primaryUnplayableReason"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="reason-alert"
+            >
+              <template #title>
+                {{ primaryUnplayableReason }} — 请用「本地播放」复制链接到 IINA / VLC / mpv 播放
+              </template>
+            </el-alert>
 
             <el-descriptions :column="3" class="mt-12" border>
               <el-descriptions-item label="作者">{{ media.author_name || '-' }}</el-descriptions-item>
@@ -453,6 +488,9 @@ onMounted(fetch)
   gap: 8px;
   margin-bottom: 12px;
   flex-wrap: wrap;
+}
+.reason-alert {
+  margin-bottom: 12px;
 }
 .mt-12 {
   margin-top: 12px;
