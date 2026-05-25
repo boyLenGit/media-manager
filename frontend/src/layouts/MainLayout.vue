@@ -10,6 +10,7 @@ import {
   Connection,
   ArrowDown,
   SwitchButton,
+  CopyDocument,
 } from '@element-plus/icons-vue'
 import { systemApi, type AppInfo } from '@/api/system'
 import { setAuthFailureHandler } from '@/api/http'
@@ -67,6 +68,7 @@ const activeMenu = computed(() => route.path)
 const navItems = [
   { path: '/', label: '总览', icon: Odometer },
   { path: '/library', label: '资源库', icon: FolderOpened },
+  { path: '/duplicates', label: '重复检测', icon: CopyDocument },
   { path: '/search', label: '搜索', icon: Search },
   { path: '/downloads', label: '下载', icon: Download },
   { path: '/settings', label: '设置', icon: Setting },

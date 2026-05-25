@@ -32,6 +32,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '资源库' },
       },
       {
+        path: 'duplicates',
+        name: 'duplicates',
+        component: () => import('@/views/Duplicates.vue'),
+        meta: { title: '重复检测' },
+      },
+      {
         path: 'media/:id',
         name: 'media-detail',
         component: () => import('@/views/MediaDetail.vue'),

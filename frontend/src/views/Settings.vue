@@ -10,6 +10,7 @@ import TagsTab from './settings/TagsTab.vue'
 import DownloaderTab from './settings/DownloaderTab.vue'
 import SearchSourcesTab from './settings/SearchSourcesTab.vue'
 import JellyfinTab from './settings/JellyfinTab.vue'
+import ParsersTab from './settings/ParsersTab.vue'
 
 const active = ref('paths')
 </script>
@@ -20,6 +21,9 @@ const active = ref('paths')
       <el-tabs v-model="active" tab-position="left">
         <el-tab-pane label="扫描路径" name="paths">
           <ScanPathsTab v-if="active === 'paths'" />
+        </el-tab-pane>
+        <el-tab-pane label="解析器" name="parsers">
+          <ParsersTab v-if="active === 'parsers'" />
         </el-tab-pane>
         <el-tab-pane label="资源类型" name="types">
           <MediaTypesTab v-if="active === 'types'" />
