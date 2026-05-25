@@ -6,25 +6,27 @@
 # 速度快 10x、内存压力小,避免 'npm Exit handler never called' OOM 问题。
 
 # Stage 1: 构建前端 (始终在 buildx 主机原生架构下执行)
-# 用 node:20-slim 而不是 node:22-slim:node 22 + npm 11 在 GitHub Actions runner 上
-# 频繁出现 'npm Exit handler never called' (内存/计时问题),node 20 更稳定
+# 用 node:20-slim,与 corepack 启用 pnpm 配合更稳定 (npm 的 'Exit handler never called'
+# 在 Docker 沙盒里时有发生,pnpm 用全局 store + 内容寻址,稳定性显著更好)
 FROM --platform=$BUILDPLATFORM node:20-slim AS frontend-build
 
-# npm registry,默认官方源(CI 友好);国内本地构建可传 --build-arg NPM_REGISTRY=https://registry.npmmirror.com 加速
 ARG NPM_REGISTRY=https://registry.npmjs.org
-
-# 给 node 设较大的旧空间内存上限,避免 npm ci 时被 OOM kill
 ENV NODE_OPTIONS=--max-old-space-size=4096
 
 WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm config set registry "$NPM_REGISTRY" && \
-    npm config set fetch-timeout 600000 && \
-    npm config set fetch-retries 3 && \
-    npm ci --no-audit --no-fund
+
+# 启用 pnpm (corepack 自带)
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+# 设镜像源 + 装依赖 (用 lockfile 模式,但 pnpm 没 lockfile 时会用 package-lock.json 转换)
+COPY frontend/package.json frontend/package-lock.json ./
+RUN pnpm config set registry "$NPM_REGISTRY" && \
+    pnpm config set fetch-timeout 600000 && \
+    pnpm import && \
+    pnpm install --frozen-lockfile --prefer-offline
 
 COPY frontend/ ./
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Python 运行时 (按目标架构构建)
 FROM python:3.11-slim AS runtime
