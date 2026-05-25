@@ -1,6 +1,12 @@
 # MediaHub 多阶段构建
-# Stage 1: 构建前端
-FROM node:22-alpine AS frontend-build
+#
+# 关键优化:前端构建阶段强制使用 BUILDPLATFORM (执行 buildx 的机器原生架构,
+# 通常是 amd64),而不是目标架构。前端只产出静态 HTML/JS/CSS 没有架构差异,
+# 这样跨架构(amd64+arm64)构建时 arm64 不需要 QEMU 模拟跑 node,
+# 速度快 10x、内存压力小,避免 'npm Exit handler never called' OOM 问题。
+
+# Stage 1: 构建前端 (始终在 buildx 主机原生架构下执行)
+FROM --platform=$BUILDPLATFORM node:22-slim AS frontend-build
 
 # npm registry,默认官方源(CI 友好);国内本地构建可传 --build-arg NPM_REGISTRY=https://registry.npmmirror.com 加速
 ARG NPM_REGISTRY=https://registry.npmjs.org
@@ -8,12 +14,12 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm config set registry "$NPM_REGISTRY" && \
-    npm ci --no-audit --no-fund
+    npm ci --no-audit --no-fund --prefer-offline
 
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Python 运行时
+# Stage 2: Python 运行时 (按目标架构构建)
 FROM python:3.11-slim AS runtime
 
 # 构建参数(由 CI 注入,本地构建可不传)
@@ -22,7 +28,7 @@ ARG BUILD_COMMIT=unknown
 # pip 源,默认官方;国内本地传 --build-arg PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple 加速
 ARG PIP_INDEX=https://pypi.org/simple
 
-# 系统依赖:ffmpeg(可选,用于媒体探测)
+# 系统依赖:ffmpeg(可选,用于媒体探测和缩略图)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
