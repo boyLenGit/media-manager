@@ -2,9 +2,12 @@
 # Stage 1: 构建前端
 FROM node:22-alpine AS frontend-build
 
+# npm registry,默认官方源(CI 友好);国内本地构建可传 --build-arg NPM_REGISTRY=https://registry.npmmirror.com 加速
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm config set registry https://registry.npmmirror.com && \
+RUN npm config set registry "$NPM_REGISTRY" && \
     npm ci --no-audit --no-fund
 
 COPY frontend/ ./
@@ -16,6 +19,8 @@ FROM python:3.11-slim AS runtime
 # 构建参数(由 CI 注入,本地构建可不传)
 ARG BUILD_VERSION=dev
 ARG BUILD_COMMIT=unknown
+# pip 源,默认官方;国内本地传 --build-arg PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple 加速
+ARG PIP_INDEX=https://pypi.org/simple
 
 # 系统依赖:ffmpeg(可选,用于媒体探测)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +31,7 @@ WORKDIR /app
 
 # Python 依赖
 COPY backend/pyproject.toml ./backend/
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+RUN pip install --no-cache-dir -i "$PIP_INDEX" \
     fastapi \
     'uvicorn[standard]' \
     sqlmodel \
