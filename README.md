@@ -1,4 +1,4 @@
-# MediaHub NAS
+# Media Manager
 
 部署在群晖 NAS 上的轻量级资源搜索、下载、资源库管理、去重、视频播放系统。
 
@@ -82,7 +82,7 @@
 ### 1. 准备
 
 ```bash
-git clone <repo> mediahub && cd mediahub
+git clone <repo> media-manager && cd media-manager
 cp .env.example .env
 
 # 生成 JWT 密钥(必做!)
@@ -110,8 +110,8 @@ docker compose logs -f
 
 ### 群晖 Container Manager 使用方式
 
-1. 上传整个项目到 NAS,例如 `/volume1/docker/mediahub`
-2. Container Manager → 项目 → 创建 → 路径选 `/volume1/docker/mediahub`
+1. 上传整个项目到 NAS,例如 `/volume1/docker/media-manager`
+2. Container Manager → 项目 → 创建 → 路径选 `/volume1/docker/media-manager`
 3. 选 docker-compose.yml,直接 启动
 4. 在系统设置 → 「扫描路径」中添加 `/media`(对应挂载的 NAS 目录)
 
@@ -164,7 +164,7 @@ cd ../backend && uvicorn app.main:app --port 8000
 ## 📁 项目结构
 
 ```
-mediahub/
+media-manager/
 ├── Dockerfile                    # 多阶段构建
 ├── docker-compose.yml
 ├── .env.example
@@ -252,7 +252,7 @@ mediahub/
 | 自动追更 | RSS 订阅 + 关键词匹配 + 自动下载 |
 | 海报/元数据刮削 | TMDb / Bangumi / 豆瓣 API |
 | 多设备播放历史同步 | 当前已支持,只是没专门 UI |
-| 协议助手 | 让 mediahub://play?path=... 唤起本地 IINA/VLC |
+| 协议助手 | 让 media-manager://play?path=... 唤起本地 IINA/VLC |
 | 移动端 PWA | Vue 3 已内建 PWA 支持 |
 # media-manager
 # media-manager

@@ -1,4 +1,4 @@
-# MediaHub API 速查
+# Media Manager API 速查
 
 > 自动从 OpenAPI spec 生成的接口列表。完整定义见 http://localhost:8000/docs (FastAPI Swagger UI)。
 

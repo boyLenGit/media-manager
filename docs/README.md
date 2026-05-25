@@ -1,4 +1,4 @@
-# MediaHub 文档目录
+# Media Manager 文档目录
 
 ---
 

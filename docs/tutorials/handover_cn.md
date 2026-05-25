@@ -1,4 +1,4 @@
-# MediaHub 项目交接文档
+# Media Manager 项目交接文档
 
 > **目标读者**:接手本项目的下一个 agent / 开发者
 >
@@ -36,7 +36,7 @@ cd frontend && npm install && npm run dev
 
 ### 后端日志
 ```bash
-tail -f /tmp/mediahub-backend.log
+tail -f /tmp/media-manager-backend.log
 ```
 
 ### 自动化测试 (playwright headless)
@@ -397,7 +397,7 @@ export const xxxApi = {
 ```bash
 ssh admin@nas-ip
 cd /volume1/docker
-mkdir mediahub && cd mediahub
+mkdir media-manager && cd media-manager
 # 写一个 docker-compose.yml (抄项目根目录的)
 sudo docker compose up -d
 ```
@@ -489,7 +489,7 @@ sudo docker compose up -d
 - **GPU 转码**:不可网播视频实时 H.264 转码到浏览器(消耗 CPU/GPU,但能解决 MPEG-4 Part 2 / HEVC 的浏览器播不了问题)
 - **海报刮削**:TMDb / Bangumi / 豆瓣 API
 - **自动追更**:RSS 订阅 + 关键词 + 自动下载
-- **协议助手**:`mediahub://play?path=...` 唤起本地 IINA/VLC
+- **协议助手**:`media-manager://play?path=...` 唤起本地 IINA/VLC
 - **移动端 PWA**
 
 ---
@@ -536,14 +536,14 @@ scope 一般是 `backend` / `frontend` / `ci` / `deploy` / `docs`。
 ```bash
 # 重启后端
 pkill -f "uvicorn app.main:app"; sleep 1
-cd backend && nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/mediahub-backend.log 2>&1 & disown
+cd backend && nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/media-manager-backend.log 2>&1 & disown
 
 # 重启前端 dev server
 pkill -f "vite"; sleep 1
-cd frontend && nohup npm run dev > /tmp/mediahub-frontend.log 2>&1 & disown
+cd frontend && nohup npm run dev > /tmp/media-manager-frontend.log 2>&1 & disown
 
 # 重置数据库 (谨慎!会丢所有数据)
-rm -f backend/data/mediahub.db backend/data/mediahub.db-shm backend/data/mediahub.db-wal
+rm -f backend/data/media_manager.db backend/data/media_manager.db-shm backend/data/media_manager.db-wal
 
 # 重新生成所有缩略图 (删了缩略图目录,下次扫描会重做)
 rm -rf backend/data/thumbnails

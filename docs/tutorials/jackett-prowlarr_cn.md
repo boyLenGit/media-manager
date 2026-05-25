@@ -1,8 +1,8 @@
 # Jackett / Prowlarr 配置教程
 
-> MediaHub 不内置任何资源搜索源。本教程帮你配置 **Jackett** 或 **Prowlarr** 作为索引器代理,然后把它接入 MediaHub 的搜索功能。
+> Media Manager 不内置任何资源搜索源。本教程帮你配置 **Jackett** 或 **Prowlarr** 作为索引器代理,然后把它接入 Media Manager 的搜索功能。
 >
-> **合规声明**:你需要确保自己有权访问、下载、保存和播放对应资源。MediaHub 团队不对用户的搜索源选择负责。
+> **合规声明**:你需要确保自己有权访问、下载、保存和播放对应资源。Media Manager 团队不对用户的搜索源选择负责。
 
 ---
 
@@ -12,9 +12,9 @@
 |---|---|---|
 | **Jackett** | 老牌的 BT/磁力**索引器代理**,把上百个 BT 站的搜索接口统一成一种叫 **Torznab** 的标准协议 | 老干部 |
 | **Prowlarr** | Jackett 的现代替代品,UI 更好、维护更活跃、支持自动同步到 Sonarr/Radarr 等 | 后浪 |
-| **MediaHub** | 通过 **Torznab 协议**调用上面两位中的任意一个,展示聚合搜索结果 + 一键下载到 qBittorrent | 老板 |
+| **Media Manager** | 通过 **Torznab 协议**调用上面两位中的任意一个,展示聚合搜索结果 + 一键下载到 qBittorrent | 老板 |
 
-**两者都是给你自己的 BT 账号(公网/私有站)做"中转翻译"用的**,本身不存储资源。MediaHub 只需要它们其中一个。
+**两者都是给你自己的 BT 账号(公网/私有站)做"中转翻译"用的**,本身不存储资源。Media Manager 只需要它们其中一个。
 
 > **建议**:新装的话直接选 **Prowlarr**(更现代),已有 Jackett 就继续用。
 
@@ -24,7 +24,7 @@
 
 ### 方式 A:Docker(推荐 — 群晖/UNRAID/Linux 通用)
 
-在 MediaHub 项目目录(或你自己习惯的目录)新建 `indexer-compose.yml`:
+在 Media Manager 项目目录(或你自己习惯的目录)新建 `indexer-compose.yml`:
 
 ```yaml
 services:
@@ -99,7 +99,7 @@ docker compose -f indexer-compose.yml up -d jackett
 
 ## 3. 找到 API Key
 
-> 这是接入 MediaHub 必备的凭据。
+> 这是接入 Media Manager 必备的凭据。
 
 ### Jackett
 
@@ -133,9 +133,9 @@ docker compose -f indexer-compose.yml up -d jackett
 
 ---
 
-## 5. 在 MediaHub 中配置
+## 5. 在 Media Manager 中配置
 
-打开 MediaHub:`http://localhost:8000`(或你的 NAS 地址)
+打开 Media Manager:`http://localhost:8000`(或你的 NAS 地址)
 
 1. 登录后 → **设置 → 搜索源** → **添加搜索源**
 2. 按下表填写:
@@ -163,7 +163,7 @@ docker compose -f indexer-compose.yml up -d jackett
 | 启用 | ✅ ON |
 
 > Prowlarr 的 URL 路径里那个 `1` 是 indexer 的 ID,代表第一个 indexer。如果你想搜所有,把 URL 改成
-> `http://<nas-ip>:9696/api/v1/search` 这种 Prowlarr 标准接口形式 —— 但本系统当前的 Torznab 适配器只支持单 indexer 路径。**最简单的做法是给每个 indexer 在 MediaHub 里建一条搜索源**,Prowlarr 设置页里可以看到每个 indexer 对应的 ID 数字。
+> `http://<nas-ip>:9696/api/v1/search` 这种 Prowlarr 标准接口形式 —— 但本系统当前的 Torznab 适配器只支持单 indexer 路径。**最简单的做法是给每个 indexer 在 Media Manager 里建一条搜索源**,Prowlarr 设置页里可以看到每个 indexer 对应的 ID 数字。
 
 3. 保存 → 点该行的 **「测试」** 按钮 → 应该弹绿色 ✅ "连接正常"
 
@@ -171,7 +171,7 @@ docker compose -f indexer-compose.yml up -d jackett
 
 ## 6. 试一下搜索效果
 
-回到 MediaHub → **搜索** 页 → 输入关键词(如 `Inception`)→ **搜索**
+回到 Media Manager → **搜索** 页 → 输入关键词(如 `Inception`)→ **搜索**
 
 你会看到:
 
@@ -206,7 +206,7 @@ docker compose -f indexer-compose.yml up -d jackett
 - 看电影主用 → `2000,2040,2045`
 - 看剧主用 → `5000,5040,5045`
 - 看动漫主用 → `5070`
-- **建议为不同场景在 MediaHub 里建多条搜索源**,例如「Jackett-电影」「Jackett-剧集」「Jackett-动漫」分别配不同 cat,搜索时心智更清爽
+- **建议为不同场景在 Media Manager 里建多条搜索源**,例如「Jackett-电影」「Jackett-剧集」「Jackett-动漫」分别配不同 cat,搜索时心智更清爽
 
 ---
 
@@ -214,7 +214,7 @@ docker compose -f indexer-compose.yml up -d jackett
 
 ### Q1: 测试连接报错 `not_configured` 或超时
 
-- 检查 MediaHub 容器**能否访问** Jackett/Prowlarr 容器
+- 检查 Media Manager 容器**能否访问** Jackett/Prowlarr 容器
 - 如果两边都是 docker compose 跑的,推荐放在**同一个 compose 网络**里,或者 NAS 用 `host` 网络模式
 - URL 用 `http://nas-lan-ip:9117/...` 而不是 `http://localhost:...` (容器里 localhost 是容器自己)
 
@@ -249,7 +249,7 @@ flaresolverr:
 
 ### Q5: 私有站怎么不被风控
 
-- 限制搜索频率(MediaHub 不会刷,但你别频繁手动点)
+- 限制搜索频率(Media Manager 不会刷,但你别频繁手动点)
 - 大部分 PT 站只允许 IP 白名单/账号 cookie,确保 cookie 是从你常用浏览器拿到的最新值
 - 部分站(如 mteam)有专门的 API token,优先用 API token 而不是 cookie
 
@@ -260,14 +260,14 @@ flaresolverr:
 我个人推荐的 NAS 媒体栈,全部用 docker-compose 一起跑:
 
 ```
-MediaHub      :8000   ← 你正在用的这个
+Media Manager      :8000   ← 你正在用的这个
 Prowlarr      :9696   ← 索引器代理
 qBittorrent   :8080   ← 下载器
 Jellyfin      :8096   ← 媒体服务器(可选,网页播不了大文件时用)
 FlareSolverr  :8191   ← Cloudflare 反代(可选)
 ```
 
-它们彼此通过容器内部网络互联,在 MediaHub 里把对应的 URL 填上即可。所有 Web UI 都通过你的 NAS 反代(nginx / Caddy)+ HTTPS 暴露到公网就完美了。
+它们彼此通过容器内部网络互联,在 Media Manager 里把对应的 URL 填上即可。所有 Web UI 都通过你的 NAS 反代(nginx / Caddy)+ HTTPS 暴露到公网就完美了。
 
 ---
 
@@ -276,14 +276,14 @@ FlareSolverr  :8191   ← Cloudflare 反代(可选)
 配好之后,完整流程:
 
 ```
-1. MediaHub 搜索 「某电影名」
+1. Media Manager 搜索 「某电影名」
 2. 系统并发查询所有启用的搜索源 → 聚合结果
 3. 你看到结果 + 每个结果的「重复检测」标记
-4. 点「下载」→ MediaHub 把磁力发给 qBittorrent
-5. qBittorrent 下载完 → MediaHub 自动入库
+4. 点「下载」→ Media Manager 把磁力发给 qBittorrent
+5. qBittorrent 下载完 → Media Manager 自动入库
 6. 资源库里直接看到新资源,可网页播放或跳 Jellyfin
 ```
 
-整个链路完全自动化。出问题先看后端日志:`docker compose logs -f mediahub` 或本地开发模式的 `/tmp/mediahub-backend.log`。
+整个链路完全自动化。出问题先看后端日志:`docker compose logs -f media-manager` 或本地开发模式的 `/tmp/media-manager-backend.log`。
 
 祝你折腾愉快!

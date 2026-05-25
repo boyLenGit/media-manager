@@ -1,377 +1,399 @@
-# 群晖 NAS 部署 + 自动更新
+# 群晖 NAS Docker 部署教程
 
-> 本教程教你把 MediaHub 部署到群晖 NAS,并配置成"git push 后 NAS 自动更新到最新版"的全自动模式。
+> 把 Media Manager 部署到你的群晖 NAS 上,从零到能用,大约 10 分钟。
+>
+> 适用 DSM 7.2 及以上版本(自带 **Container Manager**)。
 
 ---
 
-## 0. 整体架构
+## 0. 前提条件
+
+- 群晖 NAS,DSM 版本 ≥ 7.2(套件中心搜 "Container Manager" 能看到才行)
+- NAS 能访问外网(拉镜像和后续自动更新需要)
+- 你能 SSH 进 NAS,**或者**会用 DSM 控制面板管文件
+
+---
+
+## 1. 镜像在哪
+
+镜像托管在 GitHub Container Registry,**完全免费、公开访问**:
 
 ```
-┌─────────────────┐  你 git push  ┌─────────────────┐
-│  本地开发机      │ ───────────►  │   GitHub       │
-└─────────────────┘                │   仓库          │
-                                   └────────┬────────┘
-                                            │ 触发
-                                            ▼
-                                   ┌─────────────────┐
-                                   │ GitHub Actions  │
-                                   │ docker build    │
-                                   │ + push image    │
-                                   └────────┬────────┘
-                                            │ 推送
-                                            ▼
-                                   ┌─────────────────┐
-                                   │  ghcr.io        │ ← 镜像仓库
-                                   │ <镜像>:latest   │
-                                   └────────┬────────┘
-                                            │ 每天检查
-                                            │ pull
-                                            ▼
-        ┌──────────────────────────────────────────────────┐
-        │                你的群晖 NAS                       │
-        │                                                  │
-        │   ┌────────────┐    ┌──────────┐    ┌─────────┐ │
-        │   │ Watchtower │ →  │ MediaHub │    │ 你的    │ │
-        │   │  自动更新  │    │  容器    │ ←  │ 浏览器  │ │
-        │   └────────────┘    └──────────┘    └─────────┘ │
-        └──────────────────────────────────────────────────┘
+ghcr.io/boylengit/media-manager:latest
 ```
 
-**全流程零干预**:你写代码 → push → 等 5-10 分钟,NAS 上的服务自动升级到新版本。
+不需要登录 GitHub 就能拉。
 
 ---
 
-## 1. 前置条件
-
-- 群晖 DSM 7.2+,装了 **Container Manager**(就是新版 Docker)
-- NAS 能访问外网(拉镜像和 Watchtower 检查更新需要)
-- 一个 GitHub 账号(代码已在 https://github.com/boyLenGit/media-manager)
-
----
-
-## 2. 第一次部署
+## 2. 方案 A:Container Manager 图形界面(推荐新手)
 
 ### 2.1 准备目录
 
-SSH 进群晖(或在 File Station 里手动建),建一个项目目录:
+打开 **File Station** → 在 `/volume1/docker/`(没有就新建)下创建文件夹 `media-manager`。
 
-```bash
-ssh admin@nas-ip
-cd /volume1/docker      # 或你习惯的位置
-mkdir -p mediahub && cd mediahub
-mkdir -p data
+进去再建子目录 `data`(用来存数据库和缩略图)。
+
+最终结构:
+```
+/volume1/docker/media-manager/
+└── data/
 ```
 
-### 2.2 上传两个文件
+### 2.2 写 docker-compose.yml
 
-把这两个文件上传到 `/volume1/docker/mediahub/` 下:
-
-**docker-compose.yml**
+仍然在 File Station 里,在 `media-manager` 目录里新建文件 `docker-compose.yml`:
 
 ```yaml
 services:
-  mediahub:
+  media-manager:
     image: ghcr.io/boylengit/media-manager:latest
-    container_name: mediahub
+    container_name: media-manager
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8000:8000"            # 左边端口被占用就改成 8090 等
     environment:
-      JWT_SECRET: 你用 openssl rand -hex 32 生成的密钥
-      CORS_ORIGINS: http://nas-ip:8000
+      # JWT 密钥 - 必改! 随便复制 64 个字符,或在 NAS SSH 里执行 openssl rand -hex 32
+      JWT_SECRET: "把-这-串-换-成-你-自-己-的-64-字-符-随-机-串-至-少-32-位"
+      JWT_ACCESS_TTL_MINUTES: 15
+      JWT_REFRESH_TTL_DAYS: 7
+      CORS_ORIGINS: "http://你的NAS-IP:8000"
       TZ: Asia/Shanghai
     volumes:
-      - ./data:/app/backend/data
-      # 改成你的 NAS 媒体目录,可加多行
-      - /volume1/media:/media:ro
-      - /volume1/downloads:/downloads:rw
-    user: "1026:100"          # ← 改成你 NAS 用户的 UID:GID
+      - ./data:/app/backend/data           # 数据持久化(必须!)
+      # 下面是要扫描的媒体目录,改成你 NAS 上的真实路径
+      # 左 = NAS 真实路径, 右 = 容器内路径(填什么都行,后面在 Web 设置里加这个右边的值即可)
+      - /volume1/media:/media:ro           # 视频库,只读
+      # - /volume1/downloads:/downloads:rw # 下载目录(可选)
+    user: "1026:100"            # 改成你 NAS 用户的 UID:GID(2.4 节会教你怎么查)
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+```
 
+**3 处必改的地方**:
+
+| 字段 | 改什么 |
+|---|---|
+| `JWT_SECRET` | 任意 64 字符随机串,生产环境必须改 |
+| `CORS_ORIGINS` | 把 `你的NAS-IP` 换成实际 IP,例如 `http://192.168.1.100:8000` |
+| `volumes` 媒体路径 | 左侧改成你视频实际放的目录 |
+| `user` | 改成你 NAS 用户的 UID:GID(2.4 节) |
+
+### 2.3 用 Container Manager 创建项目
+
+1. 打开 **Container Manager**(套件中心搜不到就升级 DSM 或装一下)
+2. 左侧选 **项目** → 点 **新增**
+3. **项目名称**: `media-manager`
+4. **路径**: 点浏览,选 `/docker/media-manager`(就是你刚才建的)
+5. **来源**: 选 **使用现有的 docker-compose.yml**
+6. 它会自动识别同目录下的 yml 文件
+7. 下一步 → 摘要确认 → 完成
+8. 它会问要不要立即启动,选 **启动**
+
+第一次会拉镜像,大约 200MB,几分钟即可。
+
+### 2.4 怎么查 UID:GID(给 user 字段填的)
+
+打开 **控制面板 → 终端机和 SNMP** → 启用 SSH。
+
+然后用任意 SSH 工具(Terminal / Putty)连进 NAS:
+
+```bash
+ssh 你的用户名@NAS-IP
+id
+# 输出形如: uid=1026(admin) gid=100(users) groups=100(users),...
+# 把 docker-compose.yml 里的 user: "1026:100" 改成你看到的数字
+```
+
+修改后回到 Container Manager → 选中项目 → 重新部署。
+
+### 2.5 验证
+
+浏览器访问:
+
+```
+http://你的NAS-IP:8000
+```
+
+第一次进来会看到 **欢迎使用 Media Manager** 页面,创建管理员账号即可。
+
+---
+
+## 3. 方案 B:SSH 命令行(推荐熟手)
+
+```bash
+# 1. SSH 进 NAS
+ssh 你的用户名@NAS-IP
+
+# 2. 准备目录
+sudo mkdir -p /volume1/docker/media-manager/data
+cd /volume1/docker/media-manager
+
+# 3. 生成 JWT 密钥
+JWT=$(openssl rand -hex 32)
+echo "记下这个 JWT_SECRET: $JWT"
+
+# 4. 查 UID:GID
+id
+
+# 5. 创建 docker-compose.yml
+sudo nano docker-compose.yml
+# 粘贴 2.2 节的内容,把 JWT/IP/UID:GID/媒体路径改好,Ctrl+X → Y → Enter 保存
+
+# 6. 启动
+sudo docker compose up -d
+
+# 7. 看日志确认起来了
+sudo docker compose logs -f media-manager
+# 看到 "Application startup complete." 和 "Uvicorn running on..." 就成功了
+# Ctrl+C 退出日志查看(容器还在跑)
+```
+
+浏览器访问 `http://你的NAS-IP:8000`。
+
+---
+
+## 4. 首次配置
+
+进入 Web UI 后:
+
+### 4.1 创建管理员账号
+
+第一次访问会自动跳到 setup 页面,填用户名 + 密码即可。**第二次启动后这个引导接口会被锁住**。
+
+### 4.2 添加扫描路径
+
+**设置 → 扫描路径 → 添加路径**:
+
+- **路径**: 容器内路径,即 docker-compose.yml 中 volumes 右边那个值,例如 `/media`
+- **名称**: 随便,如 `电影库`
+- **递归**: 打开
+- **启用**: 打开
+
+保存后点该行的 **扫描** 按钮。等几秒,你的视频会出现在「资源库」页面。
+
+### 4.3 给视频生成缩略图
+
+镜像内置 ffmpeg,**第一次扫描会自动**给所有视频抽帧生成封面。如果你看到资源卡片是字母占位符,说明扫描可能因权限问题失败了 — 检查 `user:` 字段配置(见第 2.4 节)。
+
+---
+
+## 5. 自动更新(可选,推荐)
+
+### 5.1 启用 Watchtower
+
+回到你的 docker-compose.yml,在 `services:` 下面追加:
+
+```yaml
   watchtower:
     image: containrrr/watchtower
     container_name: watchtower
     restart: unless-stopped
     environment:
       WATCHTOWER_SCHEDULE: "0 0 4 * * *"   # 每天凌晨 4 点检查
-      WATCHTOWER_LABEL_ENABLE: "true"
-      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_LABEL_ENABLE: "true"      # 只更新带标签的容器(避免误升 NAS 自带服务)
+      WATCHTOWER_CLEANUP: "true"           # 清理旧镜像
       TZ: Asia/Shanghai
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-**怎么找 UID/GID?**
+注意 `media-manager` 服务那里已经有 `labels: com.centurylinklabs.watchtower.enable=true`,Watchtower 看到这个标签才会管它。
 
-```bash
-ssh admin@nas-ip
-id admin              # 输出形如 uid=1026(admin) gid=100(users) ...
-# 把 user: "1026:100" 改成你看到的数字
-```
+应用配置:
 
-### 2.3 启动
+- Container Manager:项目 → 编辑 → 应用 → 重新部署
+- SSH:`sudo docker compose up -d`
 
-```bash
-cd /volume1/docker/mediahub
-
-# 拉镜像 + 启动
-sudo docker compose up -d
-
-# 看日志
-sudo docker compose logs -f mediahub
-```
-
-第一次启动会下载镜像(约 200 MB),完成后访问:
-
-```
-http://<nas-ip>:8000
-```
-
-第一次会进入"初始化"页面,创建管理员账号即可。
-
-### 2.4 验证 Watchtower 在跑
+### 5.2 验证 Watchtower 在跑
 
 ```bash
 sudo docker logs watchtower
+# 应该看到类似 "Watchtower starting" 和 "Session done"
 ```
 
-应该看到类似:
+之后每天凌晨 4 点,Watchtower 自动检查 ghcr.io 上的 latest tag 是不是有新版,有就拉下来重启容器。**数据(`./data` 目录)不会丢**。
 
-```
-time="2026-01-01T04:00:00+08:00" level=info msg="Session done"
-time="2026-01-01T04:00:00+08:00" level=info msg="Watchtower 1.x.x"
-```
-
----
-
-## 3. 用 Container Manager 图形界面部署(更适合不熟 SSH 的)
-
-1. **Container Manager** → **项目** → 点 **新增**
-2. 项目名:`mediahub`
-3. 路径:`/docker/mediahub`(自动创建)
-4. 来源:**创建 docker-compose.yml**,粘贴上面的内容
-5. 下一步 → 摘要 → 完成
-6. 第一次启动会拉镜像,等几分钟
-7. 浏览器打开 `http://nas-ip:8000`
-
----
-
-## 4. 工作流:你改代码 → NAS 自动更新
-
-### 你这边
+### 5.3 想立即升级一次
 
 ```bash
-cd /Users/bl/Project/media-manager
-# 改代码...
-git add -A
-git commit -m "feat: xxx"
-git push origin master
-```
-
-### GitHub 自动做的事
-
-- 触发 `.github/workflows/docker-publish.yml` 这个 Action
-- 运行 ~ 5-8 分钟:多架构构建(amd64 + arm64)、推送到 `ghcr.io/boylengit/media-manager:latest`
-- 你可以在 https://github.com/boyLenGit/media-manager/actions 看进度
-
-### Watchtower 自动做的事
-
-- 每天凌晨 4 点(可改)检查 ghcr.io 上 `latest` 是不是有新 digest
-- 如果有,自动 `docker pull` + 优雅重启容器
-- 旧镜像会清理掉(`WATCHTOWER_CLEANUP: true`)
-
-### 你想立即更新一次怎么办?
-
-```bash
-ssh admin@nas-ip
-cd /volume1/docker/mediahub
+cd /volume1/docker/media-manager
 sudo docker compose pull && sudo docker compose up -d
 ```
 
-或者让 Watchtower 立即跑一次:
+或者让 Watchtower 立即跑一轮:
 
 ```bash
-sudo docker exec watchtower /watchtower --run-once mediahub
+sudo docker exec watchtower /watchtower --run-once media-manager
 ```
 
 ---
 
-## 5. 升级 / 回滚
-
-### 想固定版本(避免半夜被自动更新打扰)
-
-把 `docker-compose.yml` 里的 `image:` 行改成具体 tag:
-
-```yaml
-image: ghcr.io/boylengit/media-manager:v1.2.3
-```
-
-或者用 commit short SHA:
-
-```yaml
-image: ghcr.io/boylengit/media-manager:sha-a1b2c3d
-```
-
-可用的 tag 列表在:https://github.com/boyLenGit/media-manager/pkgs/container/media-manager
-
-### 回滚到上一个版本
+## 6. 常用运维命令
 
 ```bash
-cd /volume1/docker/mediahub
-# 编辑 docker-compose.yml,把 image 改成具体老版本
-sudo docker compose pull
+cd /volume1/docker/media-manager
+
+# 查容器状态
+sudo docker compose ps
+
+# 看日志(跟随)
+sudo docker compose logs -f media-manager
+
+# 重启
+sudo docker compose restart media-manager
+
+# 停止 + 启动
+sudo docker compose down
 sudo docker compose up -d
+
+# 看后端跑的版本号
+curl http://NAS-IP:8000/api/health
+# 返回 {"status":"ok","version":"...","commit":"..."}
+
+# 进容器看
+sudo docker exec -it media-manager bash
+# 退出: exit
 ```
-
-### 发布正式版本(打 tag)
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-GitHub Actions 检测到 `v*.*.*` tag 会构建带版本号的镜像:
-
-- `ghcr.io/boylengit/media-manager:1.0.0`
-- `ghcr.io/boylengit/media-manager:1.0`
-- `ghcr.io/boylengit/media-manager:1`
-- `ghcr.io/boylengit/media-manager:latest`
 
 ---
 
-## 6. 数据备份
+## 7. 反向代理 + HTTPS(强烈建议)
 
-唯一需要备份的目录是 `/volume1/docker/mediahub/data/`(SQLite 数据库 + 系统设置)。
-
-群晖 **Hyper Backup** 加这一个目录到任务即可。
-
-媒体文件(`/volume1/media`、`/volume1/downloads`)是只读挂载,不在我们这层维护,正常按你 NAS 自身的备份策略处理。
-
----
-
-## 7. 反代 + HTTPS(强烈推荐)
-
-直接暴露 8000 端口不安全。建议用群晖的反向代理:
+直接暴露 8000 端口不安全,容易被局域网或公网扫描。建议用群晖的反向代理:
 
 1. **控制面板** → **登录入口** → **高级** → **反向代理服务器** → **新增**
-2. 来源:
-   - 协议:HTTPS
-   - 主机名:`mediahub.your-domain.com` 或 `nas.local`
-   - 端口:443
-3. 目的地:
-   - 协议:HTTP
-   - 主机名:localhost
-   - 端口:8000
-4. **自定义标头** → 新增 → **WebSocket** 模板(虽然我们没用 WS,加上无害)
+2. **来源**:
+   - 协议: HTTPS
+   - 主机名: `media-manager.你的域名` (你需要先有域名 + DSM 自带 Let's Encrypt 证书)
+   - 端口: 443
+3. **目的地**:
+   - 协议: HTTP
+   - 主机名: `localhost`
+   - 端口: 8000
+4. **自定义标头** Tab → 创建 → 选 **WebSocket** 模板(无副作用,加上稳妥)
+5. 保存
 
-然后浏览器访问 `https://mediahub.your-domain.com` 即可。
+然后浏览器用 `https://media-manager.你的域名` 访问就有 HTTPS 了。
 
-记得**回到 docker-compose.yml** 改 `CORS_ORIGINS` 加上反代地址:
-
-```yaml
-CORS_ORIGINS: http://nas-ip:8000,https://mediahub.your-domain.com
-```
-
----
-
-## 8. 常见问题
-
-### Q1: 拉镜像失败 `unauthorized`
-
-仓库还是私有的。两种办法:
-
-- **办法 A(推荐)**:把镜像设为公开 — 打开 https://github.com/boyLenGit/media-manager/pkgs/container/media-manager → **Package settings** → **Change visibility** → **Public** → 输入仓库名确认
-
-- **办法 B**:让 NAS 用 token 登录 ghcr.io
-  ```bash
-  # 在 NAS 上
-  echo "ghp_xxx" | sudo docker login ghcr.io -u boyLenGit --password-stdin
-  ```
-  然后再 `docker compose pull`
-
-### Q2: 群晖架构不对(arm 错误)
-
-我们的镜像是多架构构建,**amd64 / arm64 都支持**(覆盖 99% 群晖型号)。
-万一你是 arm v7 等小众型号,看 `docker info` 输出的 `Architecture`,然后:
-
-```bash
-# 临时只看支持的架构
-docker manifest inspect ghcr.io/boylengit/media-manager:latest | grep architecture
-```
-
-如不支持你的架构,issue 联系我,我加一个 platform 即可。
-
-### Q3: Watchtower 没生效
-
-检查容器有没有打标签:
-
-```bash
-sudo docker inspect mediahub | grep -A 2 Labels
-# 应该看到 "com.centurylinklabs.watchtower.enable": "true"
-```
-
-或者改成"看光所有容器"模式 — 把 watchtower 的 `WATCHTOWER_LABEL_ENABLE` 改成 `false`(危险,会更新所有容器,包括别的服务)。
-
-### Q4: 自动更新后服务挂了 / 数据丢失
-
-不会丢数据,因为 `data/` 是卷挂载、独立于镜像。
-
-如果新版本有 bug 让服务起不来,Watchtower 不会回滚,你需要手动:
-
-```bash
-cd /volume1/docker/mediahub
-# 改 image 改成上个能跑的版本
-sudo docker compose up -d
-```
-
-为了避免这种情况,**生产环境建议固定到具体版本号**,不要用 `latest`,Watchtower 也别用。需要更新时手动 `docker compose pull` + `up -d`。
-
-### Q5: 想接收更新通知
-
-Watchtower 支持 Telegram / Slack / 邮件 / 任意 Webhook,在 docker-compose.yml 的 watchtower 服务里加:
+记得回到 docker-compose.yml,**把反代地址加到 CORS_ORIGINS**:
 
 ```yaml
-environment:
-  WATCHTOWER_NOTIFICATIONS: shoutrrr
-  WATCHTOWER_NOTIFICATION_URL: telegram://<bot-token>@telegram?chats=<chat-id>
+CORS_ORIGINS: "http://192.168.1.100:8000,https://media-manager.你的域名"
 ```
 
-格式参考:https://containrrr.dev/shoutrrr/
+重新 `docker compose up -d` 让配置生效。
 
 ---
 
-## 9. 推荐部署组合
+## 8. 备份策略
 
-完整 NAS 媒体栈(`indexer-compose.yml` 单独管,避免配置文件太长):
+唯一需要备份的是 `/volume1/docker/media-manager/data/` 目录,里面是:
 
-```
-docker-compose.yml          → MediaHub + Watchtower + qBittorrent
-indexer-compose.yml         → Jackett/Prowlarr (见 jackett-prowlarr_cn.md)
-jellyfin-compose.yml        → Jellyfin (可选,网页播不了大文件时的兜底)
-```
+- `media_manager.db` — SQLite 数据库(你的所有资源元数据、用户、配置)
+- `media_manager.db-wal` / `-shm` — WAL 模式的副文件(也要一起备份)
+- `thumbnails/` — 视频缩略图(丢了重新扫描会重新生成,**不备份也行**)
 
-完整一份在仓库 `docs/examples/full-stack-compose.yml`(待补)。
+群晖的 **Hyper Backup** 套件加一条任务,把 `/volume1/docker/media-manager/data/` 备到 USB 硬盘 / Cloud 即可。
+
+媒体源文件本身(`/volume1/media`)是只读挂载,我们不动,按你 NAS 自己的备份策略处理。
 
 ---
 
-## 10. 检查当前版本
+## 9. 常见问题
 
-随时可以问后端跑的是哪个版本:
+### Q1: 拉镜像失败 `pull access denied`
+
+镜像应该是公开的。如果还是失败:
 
 ```bash
-curl http://nas-ip:8000/api/health
+# 试一下手动拉看具体错误
+sudo docker pull ghcr.io/boylengit/media-manager:latest
 ```
 
-返回:
+如果是网络问题(NAS 访问不到 ghcr.io),可以走代理或者用国内 docker mirror。
 
-```json
-{
-  "status": "ok",
-  "time": "2026-01-01T00:00:00Z",
-  "version": "1.0.0",
-  "commit": "a1b2c3d4..."
-}
+### Q2: 容器起来了但 8000 端口访问不到
+
+群晖防火墙可能拦了:
+
+1. **控制面板** → **安全性** → **防火墙**
+2. 找到当前生效的规则集(默认是 `default`)
+3. 编辑规则 → 创建 → 端口选 8000 → 允许
+
+### Q3: 资源库扫不到东西 / 缩略图全是字母占位符
+
+99% 是文件权限问题,容器里的用户读不到 `/volume1/media` 下的文件。
+
+解决:
+1. SSH 进 NAS,`id` 查你 NAS 用户的 UID:GID
+2. 改 docker-compose.yml 的 `user: "你查到的 UID:GID"`
+3. 重新部署
+
+### Q4: 想换端口
+
+把 docker-compose.yml 里的 `"8000:8000"` 改成 `"8090:8000"`(左边是宿主机端口,右边容器内不用改)。同时 `CORS_ORIGINS` 也要跟着改。
+
+### Q5: 升级后界面还是旧版
+
+浏览器强制刷新 `Cmd/Ctrl + Shift + R`(清缓存)。如果还不行,看一下后端版本:
+
+```bash
+curl http://NAS-IP:8000/api/health
 ```
 
-如果你看到 `version: dev` 说明是手动 build 的本地镜像。
+`commit` 字段就是当前版本的 git commit short SHA。和 https://github.com/boyLenGit/media-manager/commits/master 对一下就知道是不是真的升上去了。
+
+### Q6: 我从更早的 MediaHub 版本升级过来,数据会丢吗?
+
+**不会**。系统启动时会自动检测旧的 `mediahub.db` 并改名为 `media_manager.db`,所有资源、用户、配置都会保留。看启动日志能看到:
+
+```
+Found legacy database data/mediahub.db, renaming to data/media_manager.db
+```
+
+如果你担心,部署前手动备份一下 `data/` 目录最稳。
+
+### Q7: 容器重启后又得重新登录?
+
+`localStorage` 里的 token 会保留,但容器重启时 access_token(15 分钟有效)如果过期了,会自动用 refresh_token 续 — 也就是**最多一次登录后能用 7 天**。如果连 refresh 都过期了,会自动跳登录页。
+
+---
+
+## 10. 完整推荐技术栈
+
+如果你打算搭一整套自动化媒体管家,推荐这些容器一起跑:
+
+```
+media-manager  :8000    ← 资源库主入口(本项目)
+qbittorrent    :8080    ← 下载器
+prowlarr       :9696    ← 搜索源代理(更现代,Jackett 替代品)
+jellyfin       :8096    ← 媒体服务器(网页播不了的资源用 Jellyfin 转码播放)
+watchtower             ← 自动更新(本文档第 5 节)
+```
+
+每个组件都用独立的 docker-compose.yml,方便管理。Prowlarr 配置参考 `docs/tutorials/jackett-prowlarr_cn.md`。
+
+---
+
+## 总结流程图
+
+```
+你 git push → GitHub Actions 构建 → ghcr.io 镜像更新
+                                        ↓
+                              Watchtower 凌晨 4 点拉
+                                        ↓
+                              media-manager 容器自动重启 (数据保留)
+                                        ↓
+                              你浏览器访问 → 看到新版
+```
+
+部署完成后**完全无需运维**。只要你写代码 push 到 GitHub,NAS 上的服务每天会自动跟进最新版。
+
+如果你想固定版本(避免半夜被自动升级打扰),把 docker-compose.yml 里的 `image:` 行改成具体版本,比如:
+
+```yaml
+image: ghcr.io/boylengit/media-manager:sha-3e829a5
+```
+
+可用 tag 列表: https://github.com/boyLenGit/media-manager/pkgs/container/media-manager
