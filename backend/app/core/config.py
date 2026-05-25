@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     # 应用
-    app_name: str = "MediaHub"
+    app_name: str = "Media Manager"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_debug: bool = False
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # 数据
     data_dir: Path = Path("./data")
-    database_url: str = "sqlite:///./data/mediahub.db"
+    database_url: str = "sqlite:///./data/media_manager.db"
     static_dir: Path = Path("../frontend/dist")
 
     # CORS

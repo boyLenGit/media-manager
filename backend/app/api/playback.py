@@ -216,7 +216,7 @@ def _build_url(
         return fa.directory or ""
 
     if t.target_type == "custom_protocol":
-        scheme = "mediahub"
+        scheme = "media-manager"
         if t.config_json:
             try:
                 cfg = json.loads(t.config_json)

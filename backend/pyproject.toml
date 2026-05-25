@@ -1,7 +1,7 @@
 [project]
-name = "mediahub-backend"
+name = "media-manager-backend"
 version = "0.1.0"
-description = "MediaHub NAS - 资源库与视频管理系统后端"
+description = "Media Manager - NAS 资源库与视频管理系统后端"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",

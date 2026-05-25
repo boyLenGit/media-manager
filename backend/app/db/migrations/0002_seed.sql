@@ -25,4 +25,4 @@ INSERT OR IGNORE INTO playback_target (name, target_type, enabled, config_json, 
     ('复制播放链接', 'external_url', 1, '{}', 30),
     ('复制 SMB 路径', 'smb_path', 0, '{}', 40),
     ('打开所在目录', 'reveal_dir', 1, '{}', 45),
-    ('自定义协议播放', 'custom_protocol', 0, '{"scheme":"mediahub"}', 50);
+    ('自定义协议播放', 'custom_protocol', 0, '{"scheme":"media-manager"}', 50);

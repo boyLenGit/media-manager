@@ -1,4 +1,4 @@
--- MediaHub 初始化 schema (v0001)
+-- Media Manager 初始化 schema (v0001)
 -- 包含:核心业务表、FTS5 搜索表、初始化数据
 -- 对应需求文档 v0.1 第 7/8/9 节
 
