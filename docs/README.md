@@ -11,11 +11,13 @@
 
 - **[tutorials/synology-deploy_cn.md](./tutorials/synology-deploy_cn.md)** — 群晖 NAS 部署(DSM 7.2+ Container Manager)+ Watchtower 自动更新
 - **[tutorials/synology-dsm71-deploy_cn.md](./tutorials/synology-dsm71-deploy_cn.md)** — **群晖 DSM 7.1 老 Docker 套件实战部署**(含 ghcr.io 拉取卡住、SSH SCP 协议、OCI manifest 兼容等坑的解决方案)
+- **[tutorials/synology-dsm71-update_cn.md](./tutorials/synology-dsm71-update_cn.md)** — **群晖 DSM 7.1 老 Docker 更新教程**(3 种更新方案 + 一键脚本 + 回滚 + FAQ)
 - **[tutorials/jackett-prowlarr_cn.md](./tutorials/jackett-prowlarr_cn.md)** — 配置 Jackett / Prowlarr 作为搜索源
 
 ## 🔧 工具脚本
 
 - **[scripts/pull-image.py](./scripts/pull-image.py)** — 纯 Python 实现的镜像拉取工具,绕开旧版 docker 拉 ghcr.io 多架构镜像的兼容问题
+- **[scripts/update-on-synology.sh](./scripts/update-on-synology.sh)** — 群晖 DSM 7.1 一键更新脚本,自动 pull + recreate + 健康检查 + 清理
 
 ---
 
