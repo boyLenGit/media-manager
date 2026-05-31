@@ -56,4 +56,22 @@ export const scanApi = {
   getJob: (id: number) => http.get<ScanJob>(`/scan/jobs/${id}`).then((r) => r.data),
 
   getJobLogs: (id: number) => http.get<ScanLog[]>(`/scan/jobs/${id}/logs`).then((r) => r.data),
+
+  /**
+   * 列出当前进程(容器)可访问的挂载点。
+   * 用于 UI 提示「你可以填这些路径」。
+   */
+  listMounts: () =>
+    http
+      .get<{
+        in_container: boolean
+        mounts: Array<{
+          path: string
+          fs_type: string
+          readonly: boolean
+          exists: boolean
+          is_dir: boolean
+        }>
+      }>('/scan/mounts')
+      .then((r) => r.data),
 }

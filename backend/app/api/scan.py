@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models import ScanJob, ScanLog, ScanPath
+from app.services.mount_service import in_container, list_user_mounts
 from app.tasks import scan_worker
 
 router = APIRouter()
@@ -119,3 +120,29 @@ def get_job_logs(
         .order_by(ScanLog.id.desc())  # type: ignore[union-attr]
         .limit(limit)
     ).all()
+
+
+# ============================================================
+# 容器内可用挂载点 (帮助 UI 提示用户可填什么路径)
+# ============================================================
+@router.get("/mounts")
+def list_mounts() -> dict:
+    """返回当前进程能访问的"挂载根目录",前端用来提示用户。
+
+    - 容器内:解析 /proc/self/mountinfo,列出 bind mount 进来的目录
+    - 容器外:返回若干常见目录作为候选
+    """
+    mounts = list_user_mounts()
+    return {
+        "in_container": in_container(),
+        "mounts": [
+            {
+                "path": m.path,
+                "fs_type": m.fs_type,
+                "readonly": m.is_readonly,
+                "exists": m.exists,
+                "is_dir": m.is_dir,
+            }
+            for m in mounts
+        ],
+    }
