@@ -73,11 +73,18 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          # 用 outputs 替代 push,可以指定 manifest 格式
+          # type=registry,manifest:type=docker → 推到 registry,使用旧的 Docker manifest list v2 格式
+          # 这样旧版 docker (≤ 20.10.6,例如群晖 DSM 7.1 的套件版本) 也能拉
+          # 否则默认会推 OCI image index v1 格式,旧 docker 不认会卡住
+          outputs: type=registry,manifest:type=docker
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # 关掉 attestation (OCI 索引附件),进一步保证清单格式纯净
+          provenance: false
+          sbom: false
           build-args: |
             BUILD_VERSION=${{ steps.meta.outputs.version }}
             BUILD_COMMIT=${{ github.sha }}
