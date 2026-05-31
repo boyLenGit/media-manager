@@ -11,6 +11,8 @@ import {
   ArrowDown,
   SwitchButton,
   CopyDocument,
+  DArrowLeft,
+  DArrowRight,
 } from '@element-plus/icons-vue'
 import { systemApi, type AppInfo } from '@/api/system'
 import { setAuthFailureHandler } from '@/api/http'
@@ -21,7 +23,12 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-const collapse = ref(false)
+const COLLAPSE_KEY = 'media-manager.sidebar.collapse'
+const collapse = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
+const toggleCollapse = () => {
+  collapse.value = !collapse.value
+  localStorage.setItem(COLLAPSE_KEY, collapse.value ? '1' : '0')
+}
 const info = ref<AppInfo | null>(null)
 const healthy = ref<boolean | null>(null)
 
@@ -121,14 +128,16 @@ onMounted(async () => {
           <template #title>{{ n.label }}</template>
         </el-menu-item>
       </el-menu>
+      <div class="aside-collapse" @click="toggleCollapse" :title="collapse ? '展开侧栏' : '收起侧栏'">
+        <el-icon :size="16">
+          <component :is="collapse ? DArrowRight : DArrowLeft" />
+        </el-icon>
+      </div>
     </el-aside>
 
     <el-container>
       <el-header class="layout-header">
         <div class="header-left">
-          <el-button text @click="collapse = !collapse">
-            <span class="toggle">{{ collapse ? '»' : '«' }}</span>
-          </el-button>
           <span class="page-title">{{ route.meta.title }}</span>
         </div>
 
@@ -194,6 +203,27 @@ onMounted(async () => {
   background: #1f2937;
   transition: width 0.2s;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.layout-aside :deep(.el-menu) {
+  flex: 1;
+  overflow-y: auto;
+}
+.aside-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border-top: 1px solid #334155;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.aside-collapse:hover {
+  background: #334155;
+  color: #f1f5f9;
 }
 .brand {
   display: flex;
@@ -219,7 +249,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 200px;
+  min-width: 120px;
 }
 .global-search {
   flex: 1;
@@ -240,10 +270,6 @@ onMounted(async () => {
 }
 .muted {
   color: #9ca3af;
-}
-.toggle {
-  font-size: 16px;
-  color: #6b7280;
 }
 .page-title {
   font-size: 16px;

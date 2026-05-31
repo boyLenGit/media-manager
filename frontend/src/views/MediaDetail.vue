@@ -499,10 +499,15 @@ onMounted(fetch)
   margin-top: 16px;
 }
 .cover {
-  aspect-ratio: 2/3;
+  aspect-ratio: 16/9;
   border-radius: 6px;
   overflow: hidden;
   background: #f3f4f6;
+}
+.cover :deep(.el-image),
+.cover :deep(.el-image__inner) {
+  width: 100%;
+  height: 100%;
 }
 .cover-placeholder {
   width: 100%;

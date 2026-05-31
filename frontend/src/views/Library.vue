@@ -556,10 +556,15 @@ onMounted(async () => {
 .cover {
   position: relative;
   width: 100%;
-  aspect-ratio: 2/3;
+  aspect-ratio: 16/9;
   overflow: hidden;
   border-radius: 6px;
   background: #f3f4f6;
+}
+.cover :deep(.el-image),
+.cover :deep(.el-image__inner) {
+  width: 100%;
+  height: 100%;
 }
 .cover-placeholder {
   width: 100%;
