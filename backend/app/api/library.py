@@ -1,4 +1,6 @@
 """资源库 API。"""
+import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from app.core.deps import require_admin
 from app.db.session import get_session
 from app.models import (
     Author,
@@ -15,8 +18,11 @@ from app.models import (
     MediaTag,
     MediaType,
     Tag,
+    User,
 )
-from app.services import search_service
+from app.services import search_service, thumbnail_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -378,3 +384,111 @@ def batch_update(
         search_service.sync_one(session, mid)
     session.commit()
     return {"affected": affected}
+
+
+# ============================================================
+# 删除资源
+# ============================================================
+class DeleteMediaIn(BaseModel):
+    delete_files: bool = False  # 是否同时删除磁盘上的视频文件
+
+
+class DeleteMediaResult(BaseModel):
+    media_id: int
+    deleted_files: list[str] = []  # 成功删除的磁盘文件
+    failed_files: list[dict] = []  # [{"path": ..., "reason": "permission_denied" | ...}]
+    db_removed: bool
+
+
+@router.delete("/{media_id}")
+def delete_media(
+    media_id: int,
+    delete_files: bool = Query(default=False, description="是否同时删除磁盘文件"),
+    session: Session = Depends(get_session),
+    _admin: User = Depends(require_admin),
+) -> DeleteMediaResult:
+    """删除一个 media_item。
+
+    - delete_files=False (默认): 仅清理 DB(media_item / media_file / media_tag / 缩略图),
+      file_asset 保留(但其 media_file 关联会被删除,下次扫描会重新建立或保持孤儿状态)
+    - delete_files=True: 尝试删除磁盘上的真实视频文件;无权限时返回 failed_files,
+      DB 仍然清理(避免 UI 上 "明明删了还在")
+    """
+    item = session.get(MediaItem, media_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="media_not_found")
+
+    # 收集所有关联的物理文件路径
+    rows = session.exec(
+        select(FileAsset)
+        .join(MediaFile, MediaFile.file_asset_id == FileAsset.id)  # type: ignore[arg-type]
+        .where(MediaFile.media_item_id == media_id)
+    ).all()
+    paths = [(fa.id, fa.path) for fa in rows]
+
+    deleted_files: list[str] = []
+    failed_files: list[dict] = []
+
+    # 1. 可选: 删磁盘文件
+    if delete_files:
+        for fa_id, p in paths:
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+                    deleted_files.append(p)
+                else:
+                    # 文件本来就不在,不算失败
+                    deleted_files.append(p)
+            except PermissionError:
+                failed_files.append({"path": p, "reason": "permission_denied"})
+            except OSError as e:
+                failed_files.append({"path": p, "reason": f"os_error: {e}"})
+
+    # 2. 删 DB 关联
+    # media_tag, media_file 都靠 ON DELETE CASCADE,但保险起见显式删
+    media_tags = session.exec(select(MediaTag).where(MediaTag.media_item_id == media_id)).all()
+    for mt in media_tags:
+        session.delete(mt)
+    media_files = session.exec(select(MediaFile).where(MediaFile.media_item_id == media_id)).all()
+    fa_ids_to_check = {mf.file_asset_id for mf in media_files}
+    for mf in media_files:
+        session.delete(mf)
+
+    # 3. 如果删了文件,把对应 file_asset 也清掉(否则会作为孤儿一直存在)
+    if delete_files:
+        for fa_id in fa_ids_to_check:
+            fa = session.get(FileAsset, fa_id)
+            if fa:
+                session.delete(fa)
+
+    # 4. 清缩略图文件
+    try:
+        tp = thumbnail_service.get_thumbnail_path(media_id)
+        if tp.exists():
+            tp.unlink()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("clean thumbnail failed for %d: %s", media_id, e)
+
+    # 5. FTS 索引清理 + 删 media_item
+    from sqlalchemy import text
+
+    try:
+        session.exec(text("DELETE FROM media_search_fts WHERE media_item_id=:m"), {"m": media_id})  # type: ignore[arg-type]
+    except Exception:  # noqa: BLE001
+        # FTS 表可能不存在(老库)或 sqlmodel 不接受 text 语法,降级 raw
+        try:
+            session.connection().execute(
+                text("DELETE FROM media_search_fts WHERE media_item_id=:m"), {"m": media_id}
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("clean fts for %d failed: %s", media_id, e)
+
+    session.delete(item)
+    session.commit()
+
+    return DeleteMediaResult(
+        media_id=media_id,
+        deleted_files=deleted_files,
+        failed_files=failed_files,
+        db_removed=True,
+    )

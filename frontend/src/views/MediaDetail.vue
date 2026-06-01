@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Star,
   StarFilled,
@@ -13,6 +13,7 @@ import {
   Link,
   CopyDocument,
   FolderOpened,
+  Delete,
 } from '@element-plus/icons-vue'
 import { mediaApi, type MediaItemDetail } from '@/api/media'
 import {
@@ -22,12 +23,16 @@ import {
   type ResumePosition,
 } from '@/api/playback'
 import { filesApi } from '@/api/files'
+import { useAuthStore } from '@/store/auth'
 import PlayerDialog from '@/components/PlayerDialog.vue'
 import MediaEditDialog from '@/components/MediaEditDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const id = Number(route.params.id)
+
+const isAdmin = computed(() => auth.user?.role === 'admin')
 
 const media = ref<MediaItemDetail | null>(null)
 const playOpts = ref<PlaybackOptionsResp | null>(null)
@@ -234,6 +239,115 @@ const setWatchStatus = async (status: string) => {
   media.value = r
 }
 
+// ============================================================
+// 删除
+// ============================================================
+const deleteMedia = async () => {
+  if (!media.value) return
+
+  // 第一步: 先问是否要同时删磁盘文件
+  let deleteFiles = false
+  try {
+    const action = await ElMessageBox.confirm(
+      `确定要删除「${media.value.title}」?\n\n` +
+        '• 仅清理资源库:不动磁盘文件,以后再扫描会重新加回来\n' +
+        '• 一并删除磁盘文件:会尝试删除真实视频文件(无权限会保留并提示)',
+      '删除资源',
+      {
+        distinguishCancelAndClose: true,
+        confirmButtonText: '一并删除磁盘文件',
+        cancelButtonText: '仅清理资源库',
+        type: 'warning',
+      },
+    )
+    deleteFiles = action === 'confirm'
+  } catch (e) {
+    // close() 即取消
+    if (e === 'close') return
+    // cancel() 走"仅清理"
+    deleteFiles = false
+  }
+
+  try {
+    const r = await mediaApi.remove(media.value.id, deleteFiles)
+    if (r.failed_files.length > 0) {
+      // 部分文件删失败(权限) — 但 DB 已清理
+      const reasons = r.failed_files
+        .map((f) => `• ${f.path}\n  ${f.reason === 'permission_denied' ? '权限不足' : f.reason}`)
+        .join('\n')
+      ElMessageBox.alert(
+        `资源库已清理,但磁盘文件未全部删除:\n\n${reasons}\n\n` +
+          '请检查容器对该路径是否只读挂载(:ro),' +
+          '或文件 owner 是否与容器 user (一般 1026:100) 匹配。',
+        '部分删除失败',
+        { type: 'warning', confirmButtonText: '我知道了' },
+      )
+    } else if (deleteFiles && r.deleted_files.length > 0) {
+      ElMessage.success(`已删除资源,并删除 ${r.deleted_files.length} 个磁盘文件`)
+    } else {
+      ElMessage.success('已从资源库删除')
+    }
+    router.push('/library')
+  } catch (e: any) {
+    if (e?.response?.status === 403) {
+      ElMessage.error('删除失败:仅管理员可执行')
+    } else if (e?.response?.status === 404) {
+      ElMessage.error('资源不存在或已被删除')
+    } else {
+      ElMessage.error(`删除失败:${e?.response?.data?.detail || e?.message || '未知错误'}`)
+    }
+  }
+}
+
+// ============================================================
+// 视频技术信息(取主文件)
+// ============================================================
+const formatBitrate = (sizeBytes?: number, durationSec?: number) => {
+  if (!sizeBytes || !durationSec || durationSec < 1) return '-'
+  // 估算总码率 = size * 8 / duration (bps)
+  const bps = (sizeBytes * 8) / durationSec
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(2)} Mbps`
+  if (bps >= 1_000) return `${(bps / 1_000).toFixed(0)} Kbps`
+  return `${bps.toFixed(0)} bps`
+}
+
+const resolutionLabel = (w?: number, h?: number) => {
+  if (!w || !h) return '-'
+  const name =
+    h >= 2160
+      ? '4K'
+      : h >= 1440
+        ? '2K'
+        : h >= 1080
+          ? '1080p'
+          : h >= 720
+            ? '720p'
+            : h >= 480
+              ? '480p'
+              : ''
+  return name ? `${w}×${h} (${name})` : `${w}×${h}`
+}
+
+const codecLabel = (codec?: string) => {
+  if (!codec) return '-'
+  // 简单美化:hevc → HEVC / H.265
+  const m: Record<string, string> = {
+    hevc: 'HEVC (H.265)',
+    h264: 'H.264 (AVC)',
+    av1: 'AV1',
+    vp9: 'VP9',
+    aac: 'AAC',
+    opus: 'Opus',
+    flac: 'FLAC',
+    mp3: 'MP3',
+    ac3: 'AC-3',
+    eac3: 'E-AC-3',
+    dts: 'DTS',
+  }
+  const lc = codec.toLowerCase()
+  return m[lc] || codec.toUpperCase()
+}
+
 onMounted(fetch)
 </script>
 
@@ -342,6 +456,16 @@ onMounted(fetch)
               </el-dropdown>
 
               <el-button size="large" @click="editOpen = true">编辑</el-button>
+              <el-button
+                v-if="isAdmin"
+                size="large"
+                type="danger"
+                plain
+                :icon="Delete"
+                @click="deleteMedia"
+              >
+                删除
+              </el-button>
             </div>
 
             <!-- 不可网页直放时的精确原因提示 -->
@@ -383,6 +507,48 @@ onMounted(fetch)
             </el-descriptions>
           </el-col>
         </el-row>
+      </el-card>
+
+      <!-- 视频技术信息 (取主文件) -->
+      <el-card v-if="primaryFile" class="mt-16" header="视频信息">
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">分辨率</div>
+            <div class="info-value">
+              {{ resolutionLabel(primaryFile.width, primaryFile.height) }}
+            </div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">视频编码</div>
+            <div class="info-value">{{ codecLabel(primaryFile.video_codec) }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">音频编码</div>
+            <div class="info-value">{{ codecLabel(primaryFile.audio_codec) }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">封装格式</div>
+            <div class="info-value">{{ primaryFile.container?.toUpperCase() || '-' }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">时长</div>
+            <div class="info-value">{{ formatDuration(primaryFile.duration_seconds) }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">文件大小</div>
+            <div class="info-value">{{ fileSize(primaryFile.size_bytes) }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">总码率</div>
+            <div class="info-value">
+              {{ formatBitrate(primaryFile.size_bytes, primaryFile.duration_seconds) }}
+            </div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">清晰度标记</div>
+            <div class="info-value">{{ primaryFile.quality || '-' }}</div>
+          </div>
+        </div>
       </el-card>
 
       <el-card class="mt-16" header="文件列表">
@@ -527,5 +693,39 @@ onMounted(fetch)
 }
 .muted {
   color: #9ca3af;
+}
+
+/* 视频信息 grid */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+.info-label {
+  font-size: 12px;
+  color: #9ca3af;
+  letter-spacing: 0.02em;
+}
+.info-value {
+  font-size: 14px;
+  color: #1f2937;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .info-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  .info-value {
+    font-size: 13px;
+  }
 }
 </style>

@@ -80,6 +80,13 @@ export interface MediaListParams {
   offset?: number
 }
 
+export interface DeleteMediaResult {
+  media_id: number
+  deleted_files: string[]
+  failed_files: Array<{ path: string; reason: string }>
+  db_removed: boolean
+}
+
 export const mediaApi = {
   list: (params?: MediaListParams) =>
     http.get<MediaListResp>('/media', { params }).then((r) => r.data),
@@ -100,6 +107,15 @@ export const mediaApi = {
       tag_ids: number[]
     }>,
   ) => http.patch<MediaItemDetail>(`/media/${id}`, payload).then((r) => r.data),
+
+  /**
+   * 删除资源。需要 admin 权限,普通用户会拿到 403。
+   * @param deleteFiles 是否同时删除磁盘上的视频文件;false = 仅清理 DB
+   */
+  remove: (id: number, deleteFiles = false) =>
+    http
+      .delete<DeleteMediaResult>(`/media/${id}`, { params: { delete_files: deleteFiles } })
+      .then((r) => r.data),
 
   batchTag: (payload: {
     media_ids: number[]

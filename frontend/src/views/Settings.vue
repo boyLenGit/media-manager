@@ -11,6 +11,7 @@ import DownloaderTab from './settings/DownloaderTab.vue'
 import SearchSourcesTab from './settings/SearchSourcesTab.vue'
 import JellyfinTab from './settings/JellyfinTab.vue'
 import ParsersTab from './settings/ParsersTab.vue'
+import DangerZoneTab from './settings/DangerZoneTab.vue'
 
 const active = ref('paths')
 
@@ -60,6 +61,12 @@ const tabPosition = computed(() => (isMobile.value ? 'top' : 'left'))
         </el-tab-pane>
         <el-tab-pane label="用户管理" name="users">
           <UsersTab v-if="active === 'users'" />
+        </el-tab-pane>
+        <el-tab-pane name="danger">
+          <template #label>
+            <span style="color: #dc2626">危险区</span>
+          </template>
+          <DangerZoneTab v-if="active === 'danger'" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
