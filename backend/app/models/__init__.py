@@ -7,6 +7,7 @@
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import Column, Text
 from sqlmodel import Field, SQLModel
 
 
@@ -297,3 +298,23 @@ class RevokedToken(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id")
     revoked_at: datetime = Field(default_factory=_now)
     expires_at: datetime
+
+
+class AuditLog(SQLModel, table=True):
+    """系统审计日志(append-only)。
+
+    用于记录敏感操作(危险区清空、删除资源等),便于追责与排错。
+    """
+
+    __tablename__ = "audit_log"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    actor_username: Optional[str] = None  # 冗余,即使用户删了也能查到
+    action: str  # 'reset_all', 'media_delete', etc.
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
+    # JSON TEXT;字段名故意叫 metadata_json 避免与 SQLAlchemy declarative 'metadata' 冲突
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column("metadata", Text))
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)

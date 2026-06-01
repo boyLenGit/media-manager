@@ -12,6 +12,7 @@ import SearchSourcesTab from './settings/SearchSourcesTab.vue'
 import JellyfinTab from './settings/JellyfinTab.vue'
 import ParsersTab from './settings/ParsersTab.vue'
 import DangerZoneTab from './settings/DangerZoneTab.vue'
+import AuditLogTab from './settings/AuditLogTab.vue'
 
 const active = ref('paths')
 
@@ -61,6 +62,9 @@ const tabPosition = computed(() => (isMobile.value ? 'top' : 'left'))
         </el-tab-pane>
         <el-tab-pane label="用户管理" name="users">
           <UsersTab v-if="active === 'users'" />
+        </el-tab-pane>
+        <el-tab-pane label="审计日志" name="audit">
+          <AuditLogTab v-if="active === 'audit'" />
         </el-tab-pane>
         <el-tab-pane name="danger">
           <template #label>

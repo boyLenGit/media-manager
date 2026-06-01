@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -20,7 +20,7 @@ from app.models import (
     Tag,
     User,
 )
-from app.services import search_service, thumbnail_service
+from app.services import audit_service, search_service, thumbnail_service
 
 logger = logging.getLogger(__name__)
 
@@ -404,8 +404,9 @@ class DeleteMediaResult(BaseModel):
 def delete_media(
     media_id: int,
     delete_files: bool = Query(default=False, description="是否同时删除磁盘文件"),
+    request: Request = None,  # type: ignore[assignment]
     session: Session = Depends(get_session),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> DeleteMediaResult:
     """删除一个 media_item。
 
@@ -485,6 +486,22 @@ def delete_media(
 
     session.delete(item)
     session.commit()
+
+    # 审计
+    audit_service.record(
+        session,
+        actor=admin,
+        action="media_delete",
+        target_type="media",
+        target_id=media_id,
+        metadata={
+            "title": item.title,
+            "delete_files": delete_files,
+            "deleted_files_count": len(deleted_files),
+            "failed_files_count": len(failed_files),
+        },
+        request=request,
+    )
 
     return DeleteMediaResult(
         media_id=media_id,

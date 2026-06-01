@@ -58,8 +58,10 @@ const submit = async () => {
 
 const onResultClose = () => {
   resultVisible.value = false
-  // 重新进入,清前端缓存
-  window.location.href = '/'
+  // 后端已作废当前 access token,清前端 token 并跳登录
+  auth.clearTokens()
+  // 用 location 而非 router 防止任何缓存
+  window.location.href = '/login'
 }
 </script>
 
@@ -170,7 +172,7 @@ const onResultClose = () => {
     >
       <pre class="result-text">{{ resultText }}</pre>
       <template #footer>
-        <el-button type="primary" @click="onResultClose">回到首页</el-button>
+        <el-button type="primary" @click="onResultClose">重新登录</el-button>
       </template>
     </el-dialog>
   </div>
