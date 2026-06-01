@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Film,
@@ -11,13 +11,39 @@ import {
   PriceTag,
   User,
   Refresh,
+  CopyDocument,
+  Close,
 } from '@element-plus/icons-vue'
 import { statsApi, type DashboardStats, type RecentMediaItem } from '@/api/stats'
+import { scanApi, type ScanJob } from '@/api/scan'
 
 const router = useRouter()
 const stats = ref<DashboardStats | null>(null)
 const recent = ref<RecentMediaItem[]>([])
+const recentJobs = ref<ScanJob[]>([])
 const loading = ref(true)
+
+// 最近一次成功扫描里检测到的重复组数(只读 status=success 的)
+const lastDedupGroups = computed(() => {
+  const successJobs = recentJobs.value.filter((j) => j.status === 'success')
+  if (!successJobs.length) return 0
+  return successJobs[0].dedup_groups_found || 0
+})
+
+// 用户可手动关闭这个提示(localStorage 记忆,直到下次扫描产生新值)
+const dedupHintDismissed = ref(
+  localStorage.getItem('media-manager.dedupHintDismissedAt') ===
+    String(recentJobs.value[0]?.finished_at || ''),
+)
+const dismissDedupHint = () => {
+  const ts = String(recentJobs.value[0]?.finished_at || Date.now())
+  localStorage.setItem('media-manager.dedupHintDismissedAt', ts)
+  dedupHintDismissed.value = true
+}
+const showDedupHint = computed(
+  () => lastDedupGroups.value > 0 && !dedupHintDismissed.value,
+)
+const goDuplicates = () => router.push('/duplicates')
 
 const fileSize = (bytes: number) => {
   if (!bytes) return '0 B'
@@ -45,9 +71,14 @@ const formatTime = (s?: string) => {
 const fetch = async () => {
   loading.value = true
   try {
-    const [s, r] = await Promise.all([statsApi.get(), statsApi.recentMedia(12)])
+    const [s, r, j] = await Promise.all([
+      statsApi.get(),
+      statsApi.recentMedia(12),
+      scanApi.listJobs(5),
+    ])
     stats.value = s
     recent.value = r
+    recentJobs.value = j
   } finally {
     loading.value = false
   }
@@ -64,6 +95,30 @@ onMounted(fetch)
       <h2 class="title">总览</h2>
       <el-button :icon="Refresh" @click="fetch">刷新</el-button>
     </div>
+
+    <!-- 重复检测提示条 -->
+    <el-alert
+      v-if="showDedupHint"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="dedup-hint"
+    >
+      <template #title>
+        <div class="dedup-hint-row">
+          <el-icon><CopyDocument /></el-icon>
+          <span>
+            最近一次扫描检测到 <strong>{{ lastDedupGroups }}</strong> 个疑似重复资源组
+          </span>
+          <el-button size="small" type="warning" @click="goDuplicates">
+            前往处理
+          </el-button>
+          <el-button size="small" :icon="Close" link @click="dismissDedupHint">
+            稍后
+          </el-button>
+        </div>
+      </template>
+    </el-alert>
 
     <!-- 主统计卡片 -->
     <el-row :gutter="16" v-if="stats">
@@ -190,7 +245,7 @@ onMounted(fetch)
         >
           <div class="mini-card" @click="open(m.id)">
             <div class="mini-cover">
-              <el-image v-if="m.cover_path" :src="m.cover_path" fit="cover" />
+              <el-image v-if="m.cover_path" :src="m.cover_path" fit="cover" lazy />
               <div v-else class="mini-cover-ph">{{ m.title.slice(0, 1) }}</div>
               <el-tag v-if="m.favorite" type="warning" size="small" effect="dark" class="fav-badge">
                 ★
@@ -256,6 +311,15 @@ onMounted(fetch)
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+.dedup-hint {
+  margin-bottom: 16px;
+}
+.dedup-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .title {
   margin: 0;

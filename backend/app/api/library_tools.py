@@ -1,13 +1,15 @@
 """资源库重复检测接口 + 解析器配置接口。"""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.core.deps import require_admin
 from app.db.session import get_session
-from app.models import MediaFile, MediaItem
+from app.models import MediaFile, MediaItem, User
 from app.providers.parser.pipeline import ParserPipeline, list_available
+from app.services import audit_service
 from app.services.duplicate_service import find_duplicate_groups
 from app.services.filename_parser import reset_pipeline_cache
 from app.services.parser_config import (
@@ -56,7 +58,10 @@ class MergeIn(BaseModel):
 
 @router.post("/duplicates/merge")
 def merge_media(
-    payload: MergeIn, session: Session = Depends(get_session)
+    payload: MergeIn,
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    admin: User = Depends(require_admin),
 ) -> dict:
     """合并重复资源。"""
     keep = session.get(MediaItem, payload.keep_media_id)
@@ -93,6 +98,20 @@ def merge_media(
             session.delete(merged)
 
     session.commit()
+    # 审计
+    audit_service.record(
+        session,
+        actor=admin,
+        action="duplicates_merge",
+        target_type="media",
+        target_id=payload.keep_media_id,
+        metadata={
+            "merged_ids": [m for m in payload.merge_media_ids if m != payload.keep_media_id],
+            "affected_files": affected_files,
+            "keep_title": keep.title,
+        },
+        request=request,
+    )
     return {"keep_media_id": payload.keep_media_id, "affected_files": affected_files}
 
 
@@ -103,16 +122,34 @@ class DeleteMediaIn(BaseModel):
 
 @router.post("/duplicates/delete")
 def delete_duplicate_media(
-    payload: DeleteMediaIn, session: Session = Depends(get_session)
+    payload: DeleteMediaIn,
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    admin: User = Depends(require_admin),
 ) -> dict:
     """从重复组里删除某些资源(只删 DB 记录,不删磁盘)。"""
     deleted = 0
+    deleted_titles: list[str] = []
     for mid in payload.media_ids:
         m = session.get(MediaItem, mid)
         if m:
+            deleted_titles.append(m.title)
             session.delete(m)
             deleted += 1
     session.commit()
+    # 审计
+    audit_service.record(
+        session,
+        actor=admin,
+        action="duplicates_delete",
+        target_type="media",
+        metadata={
+            "media_ids": payload.media_ids,
+            "deleted": deleted,
+            "titles": deleted_titles,
+        },
+        request=request,
+    )
     return {"deleted": deleted}
 
 

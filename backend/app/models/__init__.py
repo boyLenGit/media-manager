@@ -252,7 +252,7 @@ class ScanJob(SQLModel, table=True):
     # 'running'   - 阶段1: 扫描文件入库
     # 'enriching' - 阶段2: ffprobe + 缩略图生成 (扫描已完成,但还在做后处理)
     status: str = "pending"
-    # phase: scanning / enriching / done (用来在前端显示阶段名,与 status 互补)
+    # phase: scanning / enriching / dedup / done (用来在前端显示阶段名,与 status 互补)
     phase: str = "scanning"
     total_files: int = 0
     scanned_files: int = 0
@@ -262,6 +262,10 @@ class ScanJob(SQLModel, table=True):
     # 阶段2 的进度
     enrich_total: int = 0
     enrich_done: int = 0
+    # 阶段3 的进度 (重复检测,仅末尾 job 跑)
+    dedup_total: int = 0
+    dedup_done: int = 0
+    dedup_groups_found: int = 0
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None

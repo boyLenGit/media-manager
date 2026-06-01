@@ -7,6 +7,9 @@ import { mediaApi, type MediaItemBrief, type MediaListParams } from '@/api/media
 import { authorsApi, type Author } from '@/api/authors'
 import { mediaTypesApi, type MediaType } from '@/api/mediaTypes'
 import { tagsApi, type Tag } from '@/api/tags'
+import { useAuthStore } from '@/store/auth'
+
+const auth = useAuthStore()
 
 const router = useRouter()
 const items = ref<MediaItemBrief[]>([])
@@ -139,21 +142,27 @@ const submitBatch = async () => {
   }
 }
 
-const batchSetWatched = async () => {
+const batchSetStatus = async (status: 'unwatched' | 'watching' | 'watched') => {
   if (selectedIds.value.length === 0) return
-  await ElMessageBox.confirm(
-    `将 ${selectedIds.value.length} 个资源标为已看?`,
-    '确认',
-  ).catch(() => null)
+  const labelMap = { unwatched: '未看', watching: '观看中', watched: '已看' }
+  try {
+    await ElMessageBox.confirm(
+      `将 ${selectedIds.value.length} 个资源标为「${labelMap[status]}」?`,
+      '确认',
+    )
+  } catch {
+    return
+  }
   await mediaApi.batchUpdate({
     media_ids: selectedIds.value,
-    watch_status: 'watched',
+    watch_status: status,
   })
   ElMessage.success('已更新')
   clearSelection()
   await fetch()
 }
 
+// 批量收藏/取消收藏
 const batchToggleFavorite = async (favorite: boolean) => {
   if (selectedIds.value.length === 0) return
   await mediaApi.batchUpdate({
@@ -161,6 +170,39 @@ const batchToggleFavorite = async (favorite: boolean) => {
     favorite,
   })
   ElMessage.success('已更新')
+  clearSelection()
+  await fetch()
+}
+
+// 批量删除(只清 DB,不删磁盘)
+const batchDelete = async () => {
+  if (selectedIds.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `从资源库删除 ${selectedIds.value.length} 个资源?\n\n` +
+        '仅清理资源库记录,磁盘文件保留(下次扫描会重新加回来)。',
+      '确认删除',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+
+  let success = 0
+  let failed = 0
+  for (const mid of selectedIds.value) {
+    try {
+      await mediaApi.remove(mid, false)
+      success++
+    } catch {
+      failed++
+    }
+  }
+  if (failed === 0) {
+    ElMessage.success(`已删除 ${success} 个资源`)
+  } else {
+    ElMessage.warning(`已删除 ${success} 个,失败 ${failed} 个(可能权限不足)`)
+  }
   clearSelection()
   await fetch()
 }
@@ -244,6 +286,10 @@ onMounted(async () => {
 
           <div class="filter-section">
             <div class="filter-label">标签</div>
+            <div v-if="tags.length === 0" class="empty-hint">
+              <span>还没有标签 ·</span>
+              <el-link type="primary" @click="router.push('/settings')">去设置创建</el-link>
+            </div>
             <div v-for="(items, g) in groupedTags" :key="g" class="tag-group">
               <div class="group-name">{{ g }}</div>
               <div class="tag-row">
@@ -309,9 +355,28 @@ onMounted(async () => {
               <el-button size="small" @click="clearSelection">清除选择</el-button>
               <div class="spacer" />
               <el-button size="small" type="primary" @click="openBatchDialog">批量打标签</el-button>
-              <el-button size="small" @click="batchSetWatched">标为已看</el-button>
+              <el-dropdown trigger="click">
+                <el-button size="small">
+                  改观看状态 <el-icon class="el-icon--right">▾</el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="batchSetStatus('unwatched')">标为未看</el-dropdown-item>
+                    <el-dropdown-item @click="batchSetStatus('watching')">标为观看中</el-dropdown-item>
+                    <el-dropdown-item @click="batchSetStatus('watched')">标为已看</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button size="small" @click="batchToggleFavorite(true)">收藏</el-button>
               <el-button size="small" @click="batchToggleFavorite(false)">取消收藏</el-button>
+              <el-button
+                v-if="auth.user?.role === 'admin'"
+                size="small"
+                type="danger"
+                @click="batchDelete"
+              >
+                删除
+              </el-button>
             </div>
           </el-card>
         </transition>
@@ -335,7 +400,12 @@ onMounted(async () => {
             >
               <div class="media-card" :class="{ selected: isSelected(m.id) }">
                 <div class="cover" @click.stop="openDetail(m.id)">
-                  <el-image v-if="m.cover_path" :src="m.cover_path" fit="cover" />
+                  <el-image
+                    v-if="m.cover_path"
+                    :src="m.cover_path"
+                    fit="cover"
+                    lazy
+                  />
                   <div v-else class="cover-placeholder">{{ m.title.slice(0, 1) }}</div>
                   <div class="overlay-badges">
                     <el-tag v-if="m.favorite" type="warning" size="small" effect="dark">
@@ -553,6 +623,14 @@ onMounted(async () => {
 }
 .tag-pill {
   cursor: pointer;
+}
+.empty-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  padding: 4px 0;
 }
 
 .batch-bar {

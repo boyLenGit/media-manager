@@ -232,13 +232,24 @@ class DuplicateGroup:
     members: list[DuplicateMember] = field(default_factory=list)
 
 
-def find_duplicate_groups(session: Session, similarity_threshold: float = 0.9) -> list[DuplicateGroup]:
+def find_duplicate_groups(
+    session: Session,
+    similarity_threshold: float = 0.9,
+    progress_cb: Optional["callable[[int, int], None]"] = None,  # type: ignore[name-defined]
+) -> list[DuplicateGroup]:
     """全库扫描,找出所有疑似重复组。
 
     扫描策略(按精度从高到低,每个 media 只能落入一个组,避免重复):
     1. partial_hash 完全相同 → exact (同一文件,基本是同一资源)
     2. normalized_title 完全相同 → high
     3. normalized_title 模糊匹配 (Levenshtein > similarity_threshold) → medium
+
+    优化:
+    - 第 3 轮 Levenshtein 用「前 2 字」分桶,O(n²) → O(sum bucket_size²),
+      大库下从 1e8 次降到 1e5~1e6 次。
+
+    progress_cb(done, total): 可选,每处理一个 media 调一次,用于把扫描任务的
+    dedup_done / dedup_total 实时刷到 DB。
 
     返回的组:每组至少 2 个成员,member 顺序按 media_id 升序。
     """
@@ -265,6 +276,18 @@ def find_duplicate_groups(session: Session, similarity_threshold: float = 0.9) -
     if not media_data:
         return []
 
+    total = len(media_data)
+    done = 0
+
+    def _bump():
+        nonlocal done
+        done += 1
+        if progress_cb is not None and (done % 10 == 0 or done == total):
+            try:
+                progress_cb(done, total)
+            except Exception:  # noqa: BLE001
+                pass
+
     # 用集合记录已经被分组的 media_id,避免重复
     grouped_ids: set[int] = set()
     groups: list[DuplicateGroup] = []
@@ -276,6 +299,7 @@ def find_duplicate_groups(session: Session, similarity_threshold: float = 0.9) -
             if fa.partial_hash and fa.size_bytes:
                 key = f"{fa.partial_hash}:{fa.size_bytes}"
                 hash_to_mids[key].append(mid)
+        _bump()
     for hkey, mids in hash_to_mids.items():
         unique = sorted(set(mids))
         if len(unique) >= 2:
@@ -310,41 +334,57 @@ def find_duplicate_groups(session: Session, similarity_threshold: float = 0.9) -
             )
             grouped_ids.update(unique)
 
-    # ---- 第 3 轮:标题模糊匹配 (medium) ----
-    # O(n²) 但 n 一般不大;若超过 1000 可优化
-    remaining = [
-        (mid, d["item"].normalized_title)
-        for mid, d in media_data.items()
-        if mid not in grouped_ids and d["item"].normalized_title
-    ]
-    used: set[int] = set()
-    for i, (mid_i, nt_i) in enumerate(remaining):
-        if mid_i in used or len(nt_i) < 3:
+    # ---- 第 3 轮:标题模糊匹配 (medium) — 用前 2 字分桶 ----
+    # 把剩余 normalized_title 按前 2 字分桶,只在桶内做 Levenshtein
+    # 这样 1 万部的库也能在秒级跑完
+    buckets: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for mid, d in media_data.items():
+        if mid in grouped_ids:
             continue
-        cluster = [mid_i]
-        for j in range(i + 1, len(remaining)):
-            mid_j, nt_j = remaining[j]
-            if mid_j in used:
+        nt = d["item"].normalized_title
+        if not nt or len(nt) < 3:
+            continue
+        bucket_key = nt[:2]
+        buckets[bucket_key].append((mid, nt))
+
+    used: set[int] = set()
+    for bucket_key, items_in_bucket in buckets.items():
+        if len(items_in_bucket) < 2:
+            continue
+        for i, (mid_i, nt_i) in enumerate(items_in_bucket):
+            if mid_i in used:
                 continue
-            sim = _levenshtein_ratio(nt_i, nt_j)
-            if sim >= similarity_threshold:
-                cluster.append(mid_j)
-        if len(cluster) >= 2:
-            for c in cluster:
-                used.add(c)
-            cluster_sorted = sorted(cluster)
-            groups.append(
-                DuplicateGroup(
-                    group_key=f"fuzzy:{nt_i}",
-                    match_level="medium",
-                    match_reason=f"标题相似度 ≥ {int(similarity_threshold * 100)}%",
-                    members=[_make_member(media_data[m]) for m in cluster_sorted],
+            cluster = [mid_i]
+            for j in range(i + 1, len(items_in_bucket)):
+                mid_j, nt_j = items_in_bucket[j]
+                if mid_j in used:
+                    continue
+                sim = _levenshtein_ratio(nt_i, nt_j)
+                if sim >= similarity_threshold:
+                    cluster.append(mid_j)
+            if len(cluster) >= 2:
+                for c in cluster:
+                    used.add(c)
+                cluster_sorted = sorted(cluster)
+                groups.append(
+                    DuplicateGroup(
+                        group_key=f"fuzzy:{bucket_key}:{nt_i[:20]}",
+                        match_level="medium",
+                        match_reason=f"标题相似度 ≥ {int(similarity_threshold * 100)}%",
+                        members=[_make_member(media_data[m]) for m in cluster_sorted],
+                    )
                 )
-            )
 
     # 按"严重程度"排序:exact > high > medium,组内成员多的在前
     level_order = {"exact": 0, "high": 1, "medium": 2}
     groups.sort(key=lambda g: (level_order.get(g.match_level, 9), -len(g.members)))
+
+    if progress_cb is not None:
+        try:
+            progress_cb(total, total)  # 收尾
+        except Exception:  # noqa: BLE001
+            pass
+
     return groups
 
 

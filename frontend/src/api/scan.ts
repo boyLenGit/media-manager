@@ -16,12 +16,13 @@ export interface ScanPath {
 export interface ScanJob {
   id: number
   scan_path_id?: number
-  // pending / running / enriching / success / failed
+  // pending / running / enriching / dedup / success / failed
   // - running   : 阶段 1 扫描文件
   // - enriching : 阶段 2 ffprobe + 缩略图
-  status: 'pending' | 'running' | 'enriching' | 'success' | 'failed'
-  // scanning / enriching / done
-  phase?: 'scanning' | 'enriching' | 'done'
+  // - dedup     : 阶段 3 重复检测(只有最后一个 job 跑)
+  status: 'pending' | 'running' | 'enriching' | 'dedup' | 'success' | 'failed'
+  // scanning / enriching / dedup / done
+  phase?: 'scanning' | 'enriching' | 'dedup' | 'done'
   total_files: number
   scanned_files: number
   new_files: number
@@ -29,6 +30,9 @@ export interface ScanJob {
   missing_files: number
   enrich_total: number
   enrich_done: number
+  dedup_total: number
+  dedup_done: number
+  dedup_groups_found: number
   error_message?: string
   started_at?: string
   finished_at?: string

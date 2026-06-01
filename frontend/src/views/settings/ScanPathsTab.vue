@@ -68,9 +68,13 @@ const startPolling = () => {
   stopPolling()
   pollTimer = window.setInterval(async () => {
     await fetchJobs()
-    // 只要还有 running / pending / enriching 都继续轮询
+    // 只要还有 running / pending / enriching / dedup 都继续轮询
     const stillBusy = jobs.value.some(
-      (j) => j.status === 'running' || j.status === 'pending' || j.status === 'enriching',
+      (j) =>
+        j.status === 'running' ||
+        j.status === 'pending' ||
+        j.status === 'enriching' ||
+        j.status === 'dedup',
     )
     if (!stillBusy) {
       stopPolling()
@@ -146,6 +150,7 @@ const jobStatusType = (s: string) => {
       success: 'success',
       running: 'warning',
       enriching: 'warning',
+      dedup: 'warning',
       pending: 'info',
       failed: 'danger',
     } as Record<string, any>
@@ -158,14 +163,19 @@ const jobStatusLabel = (s: string) => {
       pending: '排队中',
       running: '扫描中',
       enriching: '后处理中',
+      dedup: '查重中',
       success: '成功',
       failed: '失败',
     } as Record<string, string>
   )[s] || s
 }
 
-// 当前阶段进度(扫描 X/Y → 后处理 X/Y)
+// 当前阶段进度
 const phasePercent = (j: ScanJob) => {
+  if (j.status === 'dedup') {
+    if (!j.dedup_total) return 100
+    return Math.round((j.dedup_done / j.dedup_total) * 100)
+  }
   if (j.status === 'enriching') {
     if (!j.enrich_total) return 100
     return Math.round((j.enrich_done / j.enrich_total) * 100)
@@ -175,24 +185,32 @@ const phasePercent = (j: ScanJob) => {
 }
 
 const phaseLabel = (j: ScanJob) => {
+  if (j.status === 'dedup') {
+    return `查重 ${j.dedup_done}/${j.dedup_total}`
+  }
   if (j.status === 'enriching') {
     return `后处理 ${j.enrich_done}/${j.enrich_total}`
   }
   if (j.status === 'running') {
     return `扫描 ${j.scanned_files}/${j.total_files}`
   }
-  // 已完成: 同时显示两个阶段的最终数
-  if (j.enrich_total > 0) {
-    return `${j.scanned_files}/${j.total_files} · 缩略图 ${j.enrich_done}/${j.enrich_total}`
-  }
-  return `${j.scanned_files}/${j.total_files}`
+  // 已完成: 同时显示三阶段
+  let s = `${j.scanned_files}/${j.total_files}`
+  if (j.enrich_total > 0) s += ` · 缩略图 ${j.enrich_done}/${j.enrich_total}`
+  if (j.dedup_groups_found > 0) s += ` · 检出 ${j.dedup_groups_found} 个重复组`
+  return s
 }
 
 const formatTime = (s?: string) => (s ? new Date(s).toLocaleString() : '-')
 
 onMounted(async () => {
   await Promise.all([fetchPaths(), fetchJobs(), fetchMounts()])
-  if (jobs.value.some((j) => j.status === 'running' || j.status === 'enriching')) startPolling()
+  if (
+    jobs.value.some(
+      (j) => j.status === 'running' || j.status === 'enriching' || j.status === 'dedup',
+    )
+  )
+    startPolling()
 })
 </script>
 
@@ -247,9 +265,9 @@ onMounted(async () => {
       <el-table-column label="进度" min-width="280">
         <template #default="{ row }">
           <el-progress
-            v-if="row.status === 'running' || row.status === 'enriching'"
+            v-if="row.status === 'running' || row.status === 'enriching' || row.status === 'dedup'"
             :percentage="phasePercent(row)"
-            :status="row.status === 'enriching' ? 'success' : undefined"
+            :status="row.status === 'dedup' ? 'success' : (row.status === 'enriching' ? 'success' : undefined)"
             :format="() => phaseLabel(row)"
           />
           <span v-else>{{ phaseLabel(row) }}</span>

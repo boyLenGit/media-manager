@@ -380,26 +380,21 @@ async def run_scan_job(scan_path_id: int) -> None:
 
         await asyncio.gather(*(_enrich_one(*t) for t in enrich_targets))
 
-    # Phase 6: 收尾
+    # Phase 6: 中段更新 (scan + enrich 已完成,但还有 FTS 和 dedup)
     with Session(engine) as session:
         j = session.get(ScanJob, job_id)
-        j.status = "success"  # type: ignore[union-attr]
-        j.phase = "done"  # type: ignore[union-attr]
-        j.scanned_files = len(files)  # type: ignore[union-attr]
-        j.new_files = new_count  # type: ignore[union-attr]
-        j.updated_files = updated_count  # type: ignore[union-attr]
-        j.missing_files = missing if "missing" in locals() else 0  # type: ignore[union-attr]
-        # enrich_done 在阶段2 中已经被实时更新了,这里只兜底,确保 == enrich_total
-        if j is not None and j.enrich_done < j.enrich_total:  # type: ignore[union-attr]
-            j.enrich_done = j.enrich_total  # type: ignore[union-attr]
-        j.finished_at = datetime.utcnow()  # type: ignore[union-attr]
-        session.add(j)
-
+        if j is not None:
+            j.scanned_files = len(files)  # type: ignore[union-attr]
+            j.new_files = new_count  # type: ignore[union-attr]
+            j.updated_files = updated_count  # type: ignore[union-attr]
+            j.missing_files = missing if "missing" in locals() else 0  # type: ignore[union-attr]
+            if j.enrich_done < j.enrich_total:  # type: ignore[union-attr]
+                j.enrich_done = j.enrich_total  # type: ignore[union-attr]
+            session.add(j)
         sp = session.get(ScanPath, scan_path_id)
         if sp:
             sp.last_scan_at = datetime.utcnow()
             session.add(sp)
-
         _log(session, job_id, f"scan complete: new={new_count} updated={updated_count}")
         session.commit()
 
@@ -412,4 +407,79 @@ async def run_scan_job(scan_path_id: int) -> None:
             search_service.sync_one(session, mid)
         session.commit()
 
-    logger.info("Scan job %d done: new=%d updated=%d", job_id, new_count, updated_count)
+    # Phase 8: 重复检测 (跨所有 scan_path 全库扫一次)
+    # 只在没有其他 pending/running 扫描任务时跑(避免连续扫多个路径时重复跑)
+    with Session(engine) as session:
+        other_active = session.exec(
+            select(ScanJob).where(
+                ScanJob.id != job_id,  # type: ignore[arg-type]
+                ScanJob.status.in_(["pending", "running"]),  # type: ignore[union-attr]
+            )
+        ).first()
+
+    if other_active is not None:
+        # 有别的 job 在跑/排队,把 dedup 留给最后一个 job 跑
+        logger.info("scan job %d: skipping dedup, other jobs are pending", job_id)
+        groups_count = 0
+        skip_dedup = True
+    else:
+        skip_dedup = False
+        # 进入 dedup 阶段
+        with Session(engine) as session:
+            from sqlalchemy import func as sa_func
+
+            j = session.get(ScanJob, job_id)
+            if j is not None:
+                cnt = session.exec(select(sa_func.count(MediaItem.id))).one()  # type: ignore[arg-type]
+                j.status = "dedup"  # type: ignore[union-attr]
+                j.phase = "dedup"  # type: ignore[union-attr]
+                j.dedup_total = int(cnt or 0)
+                j.dedup_done = 0
+                session.add(j)
+                session.commit()
+
+        from app.services import duplicate_service
+
+        # 进度回调写库
+        def _dedup_progress(done: int, total: int) -> None:
+            with Session(engine) as session:
+                j = session.get(ScanJob, job_id)
+                if j is not None:
+                    j.dedup_done = done  # type: ignore[union-attr]
+                    j.dedup_total = total  # type: ignore[union-attr]
+                    session.add(j)
+                    session.commit()
+
+        with Session(engine) as session:
+            try:
+                groups = duplicate_service.find_duplicate_groups(
+                    session, similarity_threshold=0.9, progress_cb=_dedup_progress
+                )
+                groups_count = len(groups)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("dedup failed for job %d: %s", job_id, e)
+                groups_count = 0
+                with Session(engine) as s2:
+                    _log(s2, job_id, f"dedup failed: {e}", level="warn")
+                    s2.commit()
+
+    # Phase 9: 收尾
+    with Session(engine) as session:
+        j = session.get(ScanJob, job_id)
+        if j is not None:
+            j.status = "success"  # type: ignore[union-attr]
+            j.phase = "done"  # type: ignore[union-attr]
+            j.dedup_groups_found = groups_count if not skip_dedup else j.dedup_groups_found  # type: ignore[union-attr]
+            if not skip_dedup and j.dedup_done < j.dedup_total:  # type: ignore[union-attr]
+                j.dedup_done = j.dedup_total  # type: ignore[union-attr]
+            j.finished_at = datetime.utcnow()  # type: ignore[union-attr]
+            session.add(j)
+            session.commit()
+
+    logger.info(
+        "Scan job %d done: new=%d updated=%d dedup_groups=%d",
+        job_id,
+        new_count,
+        updated_count,
+        groups_count if not skip_dedup else -1,
+    )
