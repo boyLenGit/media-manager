@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.core.deps import require_admin
+from app.core.security import verify_password
 from app.db.session import get_session
 from app.models import AppSetting, User
 from app.services import thumbnail_service
@@ -53,8 +54,8 @@ def delete_setting(key: str, session: Session = Depends(get_session)) -> None:
 # 危险操作: 一键清空所有数据
 # ============================================================
 class ResetAllIn(BaseModel):
-    # 必须传入 confirm=ERASE_ALL,否则拒绝执行(防误操作)
-    confirm: str
+    # 当前管理员的登录密码 — 服务端 bcrypt 验证
+    password: str
     # 是否同时把缩略图磁盘文件清掉
     purge_thumbnails: bool = True
 
@@ -102,10 +103,9 @@ def reset_all(
 ) -> ResetAllResult:
     """**危险操作**: 清空除当前管理员之外的所有数据。
 
-    - 必须传 `confirm: "ERASE_ALL"`
-    - 仅当前用户为 admin 才允许
-    - 当前管理员的账号会被保留(否则之后无法登录)
-    - 缩略图文件可选清理(默认清)
+    安全:
+    - 必须是当前 admin
+    - 必须用 admin 自己的登录密码二次确认(服务端 bcrypt 校验)
 
     会清空:
     - 所有视频/资源 (media_item, file_asset, media_file, media_tag, ...)
@@ -121,8 +121,9 @@ def reset_all(
     - SQLite 文件结构(只 DELETE FROM,不 DROP)
     - 你磁盘上的真实视频文件
     """
-    if payload.confirm != "ERASE_ALL":
-        raise HTTPException(status_code=400, detail="confirmation_text_required: ERASE_ALL")
+    # 二次密码验证
+    if not verify_password(payload.password, admin.password_hash):
+        raise HTTPException(status_code=403, detail="password_incorrect")
 
     cleared: list[str] = []
 

@@ -23,16 +23,16 @@ export const settingsApi = {
 
   /**
    * 危险:清空除当前管理员之外的所有数据。
-   * 必须传 confirm="ERASE_ALL"。
+   * 需要传当前管理员的登录密码做二次确认(服务端 bcrypt 校验)。
    */
-  resetAll: (purge_thumbnails = true) =>
+  resetAll: (password: string, purge_thumbnails = true) =>
     http
       .post<{
         cleared_tables: string[]
         thumbnails_purged: boolean
         note: string
       }>('/settings/reset-all', {
-        confirm: 'ERASE_ALL',
+        password,
         purge_thumbnails,
       })
       .then((r) => r.data),
