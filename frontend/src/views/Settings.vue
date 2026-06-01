@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ScanPathsTab from './settings/ScanPathsTab.vue'
 import UsersTab from './settings/UsersTab.vue'
 import PlaybackTargetsTab from './settings/PlaybackTargetsTab.vue'
@@ -13,12 +13,21 @@ import JellyfinTab from './settings/JellyfinTab.vue'
 import ParsersTab from './settings/ParsersTab.vue'
 
 const active = ref('paths')
+
+// 移动端: tab 顶部水平排列(left 模式 768px 下会被严重挤压)
+const MOBILE_BREAKPOINT = 768
+const isMobile = ref(window.innerWidth < MOBILE_BREAKPOINT)
+const onResize = () => (isMobile.value = window.innerWidth < MOBILE_BREAKPOINT)
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
+
+const tabPosition = computed(() => (isMobile.value ? 'top' : 'left'))
 </script>
 
 <template>
   <div class="settings">
-    <el-card>
-      <el-tabs v-model="active" tab-position="left">
+    <el-card body-style="padding: 0">
+      <el-tabs v-model="active" :tab-position="tabPosition" class="settings-tabs">
         <el-tab-pane label="扫描路径" name="paths">
           <ScanPathsTab v-if="active === 'paths'" />
         </el-tab-pane>
@@ -61,7 +70,26 @@ const active = ref('paths')
 .settings {
   height: 100%;
 }
+.settings-tabs {
+  padding: 12px;
+}
 :deep(.el-tabs__content) {
   padding-left: 16px;
+}
+
+/* 移动端: tabs 顶部水平滚动,内容左 padding 取消 */
+@media (max-width: 768px) {
+  .settings-tabs {
+    padding: 8px;
+  }
+  :deep(.el-tabs--top .el-tabs__nav-wrap) {
+    overflow-x: auto;
+  }
+  :deep(.el-tabs--top .el-tabs__nav) {
+    white-space: nowrap;
+  }
+  :deep(.el-tabs__content) {
+    padding-left: 0;
+  }
 }
 </style>

@@ -68,7 +68,11 @@ const startPolling = () => {
   stopPolling()
   pollTimer = window.setInterval(async () => {
     await fetchJobs()
-    if (!jobs.value.some((j) => j.status === 'running' || j.status === 'pending')) {
+    // 只要还有 running / pending / enriching 都继续轮询
+    const stillBusy = jobs.value.some(
+      (j) => j.status === 'running' || j.status === 'pending' || j.status === 'enriching',
+    )
+    if (!stillBusy) {
       stopPolling()
       await fetchPaths()
     }
@@ -141,22 +145,54 @@ const jobStatusType = (s: string) => {
     {
       success: 'success',
       running: 'warning',
+      enriching: 'warning',
       pending: 'info',
       failed: 'danger',
     } as Record<string, any>
   )[s] || 'info'
 }
 
-const progressPercent = (j: ScanJob) => {
+const jobStatusLabel = (s: string) => {
+  return (
+    {
+      pending: '排队中',
+      running: '扫描中',
+      enriching: '后处理中',
+      success: '成功',
+      failed: '失败',
+    } as Record<string, string>
+  )[s] || s
+}
+
+// 当前阶段进度(扫描 X/Y → 后处理 X/Y)
+const phasePercent = (j: ScanJob) => {
+  if (j.status === 'enriching') {
+    if (!j.enrich_total) return 100
+    return Math.round((j.enrich_done / j.enrich_total) * 100)
+  }
   if (!j.total_files) return 0
   return Math.round((j.scanned_files / j.total_files) * 100)
+}
+
+const phaseLabel = (j: ScanJob) => {
+  if (j.status === 'enriching') {
+    return `后处理 ${j.enrich_done}/${j.enrich_total}`
+  }
+  if (j.status === 'running') {
+    return `扫描 ${j.scanned_files}/${j.total_files}`
+  }
+  // 已完成: 同时显示两个阶段的最终数
+  if (j.enrich_total > 0) {
+    return `${j.scanned_files}/${j.total_files} · 缩略图 ${j.enrich_done}/${j.enrich_total}`
+  }
+  return `${j.scanned_files}/${j.total_files}`
 }
 
 const formatTime = (s?: string) => (s ? new Date(s).toLocaleString() : '-')
 
 onMounted(async () => {
   await Promise.all([fetchPaths(), fetchJobs(), fetchMounts()])
-  if (jobs.value.some((j) => j.status === 'running')) startPolling()
+  if (jobs.value.some((j) => j.status === 'running' || j.status === 'enriching')) startPolling()
 })
 </script>
 
@@ -205,17 +241,18 @@ onMounted(async () => {
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="jobStatusType(row.status)" size="small">{{ row.status }}</el-tag>
+          <el-tag :type="jobStatusType(row.status)" size="small">{{ jobStatusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="进度" width="240">
+      <el-table-column label="进度" min-width="280">
         <template #default="{ row }">
           <el-progress
-            v-if="row.status === 'running'"
-            :percentage="progressPercent(row)"
-            :format="() => `${row.scanned_files}/${row.total_files}`"
+            v-if="row.status === 'running' || row.status === 'enriching'"
+            :percentage="phasePercent(row)"
+            :status="row.status === 'enriching' ? 'success' : undefined"
+            :format="() => phaseLabel(row)"
           />
-          <span v-else>{{ row.scanned_files }} / {{ row.total_files }}</span>
+          <span v-else>{{ phaseLabel(row) }}</span>
         </template>
       </el-table-column>
       <el-table-column label="新增" width="80" prop="new_files" />
@@ -346,6 +383,8 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .section-title {
   margin: 8px 0;
@@ -355,6 +394,14 @@ onMounted(async () => {
 .actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 表格在小屏内置水平滚动,避免列被挤爆 */
+@media (max-width: 768px) {
+  .paths :deep(.el-table) {
+    font-size: 12px;
+  }
 }
 
 .label-with-help {

@@ -16,12 +16,19 @@ export interface ScanPath {
 export interface ScanJob {
   id: number
   scan_path_id?: number
-  status: 'pending' | 'running' | 'success' | 'failed'
+  // pending / running / enriching / success / failed
+  // - running   : 阶段 1 扫描文件
+  // - enriching : 阶段 2 ffprobe + 缩略图
+  status: 'pending' | 'running' | 'enriching' | 'success' | 'failed'
+  // scanning / enriching / done
+  phase?: 'scanning' | 'enriching' | 'done'
   total_files: number
   scanned_files: number
   new_files: number
   updated_files: number
   missing_files: number
+  enrich_total: number
+  enrich_done: number
   error_message?: string
   started_at?: string
   finished_at?: string

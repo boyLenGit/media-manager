@@ -181,9 +181,9 @@ onMounted(async () => {
 <template>
   <div class="library">
     <el-row :gutter="12">
-      <!-- 左侧筛选 -->
-      <el-col :span="5">
-        <el-card body-style="padding: 12px">
+      <!-- 左侧筛选 (移动端整列堆叠) -->
+      <el-col :xs="24" :sm="24" :md="7" :lg="6" :xl="5">
+        <el-card body-style="padding: 12px" class="filter-card">
           <h4 class="filter-title">筛选</h4>
           <div class="filter-section">
             <div class="filter-label">观看状态</div>
@@ -268,7 +268,7 @@ onMounted(async () => {
       </el-col>
 
       <!-- 右侧主内容 -->
-      <el-col :span="19">
+      <el-col :xs="24" :sm="24" :md="17" :lg="18" :xl="19">
         <div class="toolbar">
           <el-input
             v-model="filters.q"
@@ -324,7 +324,15 @@ onMounted(async () => {
 
           <!-- 卡片视图 -->
           <el-row v-if="view === 'card'" :gutter="12">
-            <el-col v-for="m in items" :key="m.id" :span="4">
+            <el-col
+              v-for="m in items"
+              :key="m.id"
+              :xs="12"
+              :sm="8"
+              :md="6"
+              :lg="4"
+              :xl="4"
+            >
               <div class="media-card" :class="{ selected: isSelected(m.id) }">
                 <div class="cover" @click.stop="openDetail(m.id)">
                   <el-image v-if="m.cover_path" :src="m.cover_path" fit="cover" />
@@ -488,14 +496,33 @@ onMounted(async () => {
   gap: 8px;
   align-items: center;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 .spacer {
   flex: 1;
+  min-width: 8px;
 }
 .total-hint {
   font-size: 13px;
   color: #6b7280;
   margin-right: 8px;
+}
+
+/* 移动端: filter-card 顶部堆叠,toolbar 文字小一些, input 单独占一行 */
+@media (max-width: 768px) {
+  .filter-card {
+    margin-bottom: 12px;
+  }
+  .toolbar :deep(.el-input),
+  .toolbar :deep(.el-select) {
+    flex: 1 1 140px;
+    min-width: 0;
+    width: auto !important;
+  }
+  .total-hint {
+    width: 100%;
+    margin-right: 0;
+  }
 }
 
 .filter-title {

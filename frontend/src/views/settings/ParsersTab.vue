@@ -145,7 +145,7 @@ onMounted(fetch)
 
     <el-row :gutter="16">
       <!-- 左:可用列表 -->
-      <el-col :span="10">
+      <el-col :xs="24" :sm="24" :md="10" :lg="10" :xl="10">
         <el-card body-style="padding: 12px">
           <template #header>
             <strong>可用解析器</strong>
@@ -175,7 +175,7 @@ onMounted(fetch)
       </el-col>
 
       <!-- 右:激活顺序 -->
-      <el-col :span="14">
+      <el-col :xs="24" :sm="24" :md="14" :lg="14" :xl="14">
         <el-card body-style="padding: 12px">
           <template #header>
             <strong>已启用顺序</strong>

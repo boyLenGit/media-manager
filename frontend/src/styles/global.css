@@ -13,9 +13,39 @@ body,
     'Microsoft YaHei',
     sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* 移动端默认字号略大有助于触控,但不影响 root rem */
 }
 
 a {
   color: inherit;
   text-decoration: none;
 }
+
+/* ============================================================
+ * 移动端全局适配
+ * ============================================================ */
+
+/* 1. 所有 el-table 默认在小屏自动横向滚动 */
+@media (max-width: 768px) {
+  .el-table {
+    width: 100%;
+  }
+  /* el-card 默认 20px padding 在手机上太大 */
+  .el-card__body {
+    padding: 12px !important;
+  }
+  /* dialog 在小屏铺满 */
+  .el-dialog {
+    width: 92vw !important;
+    max-width: 92vw !important;
+  }
+  /* drawer / popover 文字小一号 */
+  .el-popover {
+    max-width: 90vw !important;
+  }
+  /* form 标签宽度收紧 */
+  .el-form-item__label {
+    line-height: 1.5;
+  }
+}
+

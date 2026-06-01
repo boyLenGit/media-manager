@@ -247,12 +247,20 @@ class ScanJob(SQLModel, table=True):
     __tablename__ = "scan_job"
     id: Optional[int] = Field(default=None, primary_key=True)
     scan_path_id: Optional[int] = Field(default=None, foreign_key="scan_path.id")
-    status: str = "pending"  # pending / running / success / failed
+    # status: pending / running / enriching / success / failed
+    # 'running'   - 阶段1: 扫描文件入库
+    # 'enriching' - 阶段2: ffprobe + 缩略图生成 (扫描已完成,但还在做后处理)
+    status: str = "pending"
+    # phase: scanning / enriching / done (用来在前端显示阶段名,与 status 互补)
+    phase: str = "scanning"
     total_files: int = 0
     scanned_files: int = 0
     new_files: int = 0
     updated_files: int = 0
     missing_files: int = 0
+    # 阶段2 的进度
+    enrich_total: int = 0
+    enrich_done: int = 0
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None

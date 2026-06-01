@@ -195,6 +195,7 @@ async def run_scan_job(scan_path_id: int) -> None:
         with Session(engine) as session:
             j = session.get(ScanJob, job_id)
             j.status = "failed"  # type: ignore[union-attr]
+            j.phase = "done"  # type: ignore[union-attr]
             j.error_message = f"path not exists: {root}"  # type: ignore[union-attr]
             j.finished_at = datetime.utcnow()  # type: ignore[union-attr]
             session.add(j)
@@ -292,59 +293,90 @@ async def run_scan_job(scan_path_id: int) -> None:
             if need_probe or need_thumb:
                 enrich_targets.append((fa.id, fa.path, mid))  # type: ignore[arg-type]
 
+    # 进入"后处理"阶段:更新 status=enriching, enrich_total
+    with Session(engine) as session:
+        j = session.get(ScanJob, job_id)
+        if j is not None:
+            j.status = "enriching"
+            j.phase = "enriching"
+            j.enrich_total = len(enrich_targets)
+            j.enrich_done = 0
+            session.add(j)
+            session.commit()
+
     if enrich_targets and (
         ffprobe_service.is_available() or ffprobe_service.is_ffmpeg_available()
     ):
         sem = asyncio.Semaphore(2)  # ffmpeg 比较吃 CPU,降并发到 2
 
+        # 并发安全的 done 计数
+        done_lock = asyncio.Lock()
+        done_counter = {"n": 0}
+
+        async def _bump_done() -> None:
+            async with done_lock:
+                done_counter["n"] += 1
+                n = done_counter["n"]
+            # 每完成 1 个就刷一次进度(数量不会太多,几十~几百级别,可接受)
+            with Session(engine) as session:
+                jj = session.get(ScanJob, job_id)
+                if jj is not None:
+                    jj.enrich_done = n
+                    session.add(jj)
+                    session.commit()
+
         async def _enrich_one(asset_id: int, p: str, media_id: int | None) -> None:
             async with sem:
-                # 1. 探测
-                result = None
-                if ffprobe_service.is_available():
-                    result = await ffprobe_service.probe(p)
+                try:
+                    # 1. 探测
+                    result = None
+                    if ffprobe_service.is_available():
+                        result = await ffprobe_service.probe(p)
 
-                if result:
-                    with Session(engine) as session:
-                        asset = session.get(FileAsset, asset_id)
-                        if asset:
-                            asset.media_probe_json = result.raw_json
-                            session.add(asset)
-                        mf = session.exec(
-                            select(MediaFile).where(MediaFile.file_asset_id == asset_id)
-                        ).first()
-                        if mf:
-                            mf.duration_seconds = result.duration_seconds
-                            mf.width = result.width
-                            mf.height = result.height
-                            mf.video_codec = result.video_codec
-                            mf.audio_codec = result.audio_codec
-                            if not mf.container and result.container:
-                                mf.container = result.container
-                            session.add(mf)
-                        session.commit()
-
-                # 2. 缩略图
-                if (
-                    media_id is not None
-                    and ffprobe_service.is_ffmpeg_available()
-                    and not thumbnail_service.has_thumbnail(media_id)
-                ):
-                    duration = result.duration_seconds if result else None
-                    # 从视频 10% 处取(避免黑场片头),最低 1 秒
-                    seek = max(1.0, (duration or 60.0) * 0.1)
-                    out_path = thumbnail_service.get_thumbnail_path(media_id)
-                    ok = await ffprobe_service.generate_thumbnail(
-                        p, out_path, seek_seconds=seek
-                    )
-                    if ok:
-                        # 写 cover_path
+                    if result:
                         with Session(engine) as session:
-                            mi = session.get(MediaItem, media_id)
-                            if mi and not mi.cover_path:
-                                mi.cover_path = thumbnail_service.get_thumbnail_url(media_id)
-                                session.add(mi)
-                                session.commit()
+                            asset = session.get(FileAsset, asset_id)
+                            if asset:
+                                asset.media_probe_json = result.raw_json
+                                session.add(asset)
+                            mf = session.exec(
+                                select(MediaFile).where(MediaFile.file_asset_id == asset_id)
+                            ).first()
+                            if mf:
+                                mf.duration_seconds = result.duration_seconds
+                                mf.width = result.width
+                                mf.height = result.height
+                                mf.video_codec = result.video_codec
+                                mf.audio_codec = result.audio_codec
+                                if not mf.container and result.container:
+                                    mf.container = result.container
+                                session.add(mf)
+                            session.commit()
+
+                    # 2. 缩略图
+                    if (
+                        media_id is not None
+                        and ffprobe_service.is_ffmpeg_available()
+                        and not thumbnail_service.has_thumbnail(media_id)
+                    ):
+                        duration = result.duration_seconds if result else None
+                        # 从视频 10% 处取(避免黑场片头),最低 1 秒
+                        seek = max(1.0, (duration or 60.0) * 0.1)
+                        out_path = thumbnail_service.get_thumbnail_path(media_id)
+                        ok = await ffprobe_service.generate_thumbnail(
+                            p, out_path, seek_seconds=seek
+                        )
+                        if ok:
+                            # 写 cover_path
+                            with Session(engine) as session:
+                                mi = session.get(MediaItem, media_id)
+                                if mi and not mi.cover_path:
+                                    mi.cover_path = thumbnail_service.get_thumbnail_url(media_id)
+                                    session.add(mi)
+                                    session.commit()
+                finally:
+                    # 不论成败都计入 done,避免卡进度
+                    await _bump_done()
 
         await asyncio.gather(*(_enrich_one(*t) for t in enrich_targets))
 
@@ -352,10 +384,14 @@ async def run_scan_job(scan_path_id: int) -> None:
     with Session(engine) as session:
         j = session.get(ScanJob, job_id)
         j.status = "success"  # type: ignore[union-attr]
+        j.phase = "done"  # type: ignore[union-attr]
         j.scanned_files = len(files)  # type: ignore[union-attr]
         j.new_files = new_count  # type: ignore[union-attr]
         j.updated_files = updated_count  # type: ignore[union-attr]
         j.missing_files = missing if "missing" in locals() else 0  # type: ignore[union-attr]
+        # enrich_done 在阶段2 中已经被实时更新了,这里只兜底,确保 == enrich_total
+        if j is not None and j.enrich_done < j.enrich_total:  # type: ignore[union-attr]
+            j.enrich_done = j.enrich_total  # type: ignore[union-attr]
         j.finished_at = datetime.utcnow()  # type: ignore[union-attr]
         session.add(j)
 

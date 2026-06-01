@@ -179,7 +179,15 @@ onMounted(fetch)
       </template>
       <el-empty v-if="recent.length === 0" description="还没扫描任何资源,去「设置 → 扫描路径」添加目录" />
       <el-row v-else :gutter="12">
-        <el-col v-for="m in recent" :key="m.id" :span="4" :sm="6" :md="4" :lg="2">
+        <el-col
+          v-for="m in recent"
+          :key="m.id"
+          :xs="12"
+          :sm="8"
+          :md="6"
+          :lg="4"
+          :xl="4"
+        >
           <div class="mini-card" @click="open(m.id)">
             <div class="mini-cover">
               <el-image v-if="m.cover_path" :src="m.cover_path" fit="cover" />

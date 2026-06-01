@@ -246,14 +246,14 @@ onMounted(fetch)
     <div v-if="media" class="detail">
       <el-card>
         <el-row :gutter="24">
-          <el-col :span="5">
+          <el-col :xs="24" :sm="24" :md="8" :lg="6" :xl="5">
             <div class="cover">
               <el-image v-if="media.cover_path" :src="media.cover_path" fit="cover" />
               <div v-else class="cover-placeholder">{{ media.title.slice(0, 1) }}</div>
             </div>
           </el-col>
 
-          <el-col :span="19">
+          <el-col :xs="24" :sm="24" :md="16" :lg="18" :xl="19">
             <div class="head">
               <h2 class="title">{{ media.title }}</h2>
               <el-button
@@ -508,6 +508,12 @@ onMounted(fetch)
 .cover :deep(.el-image__inner) {
   width: 100%;
   height: 100%;
+}
+
+@media (max-width: 768px) {
+  .cover {
+    margin-bottom: 12px;
+  }
 }
 .cover-placeholder {
   width: 100%;
