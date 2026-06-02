@@ -25,6 +25,7 @@ import {
 import { filesApi } from '@/api/files'
 import { bookmarksApi, type Bookmark } from '@/api/bookmarks'
 import { useAuthStore } from '@/store/auth'
+import { copyText } from '@/utils/clipboard'
 import PlayerDialog from '@/components/PlayerDialog.vue'
 import MediaEditDialog from '@/components/MediaEditDialog.vue'
 
@@ -205,31 +206,31 @@ const handleLocalOption = async (opt: PlaybackOption, fileId?: number) => {
       try {
         const t = await filesApi.streamToken(targetFid)
         const fullUrl = `${window.location.origin}${t.url}`
-        await navigator.clipboard.writeText(fullUrl)
-        ElMessage.success('已复制带签名的播放链接(1 小时内有效),可粘贴到 IINA / VLC / mpv')
+        const ok = await copyText(fullUrl)
+        if (ok) {
+          ElMessage.success('已复制带签名的播放链接(1 小时内有效),可粘贴到 IINA / VLC / mpv')
+        } else {
+          ElMessage.error('复制失败,请手动选中文本复制')
+        }
       } catch {
-        ElMessage.error('复制失败')
+        ElMessage.error('生成播放链接失败')
       }
       break
     }
 
-    case 'smb_path':
-      try {
-        await navigator.clipboard.writeText(opt.url)
-        ElMessage.success(`已复制 SMB 路径:${opt.url}`)
-      } catch {
-        ElMessage.error('复制失败')
-      }
+    case 'smb_path': {
+      const ok = await copyText(opt.url)
+      if (ok) ElMessage.success(`已复制 SMB 路径:${opt.url}`)
+      else ElMessage.error('复制失败,请手动选中文本复制')
       break
+    }
 
-    case 'reveal_dir':
-      try {
-        await navigator.clipboard.writeText(opt.url)
-        ElMessage.success(`已复制目录:${opt.url}`)
-      } catch {
-        ElMessage.error('复制失败')
-      }
+    case 'reveal_dir': {
+      const ok = await copyText(opt.url)
+      if (ok) ElMessage.success(`已复制目录:${opt.url}`)
+      else ElMessage.error('复制失败,请手动选中文本复制')
       break
+    }
 
     case 'custom_protocol':
       // 触发自定义协议(由本地助手程序处理)
@@ -255,12 +256,9 @@ const optionIcon = (type: string) => {
 
 // 复制本地路径
 const copyPath = async (path: string) => {
-  try {
-    await navigator.clipboard.writeText(path)
-    ElMessage.success('已复制本地路径')
-  } catch {
-    ElMessage.error('复制失败')
-  }
+  const ok = await copyText(path)
+  if (ok) ElMessage.success('已复制本地路径')
+  else ElMessage.error('复制失败,请手动选中文本复制')
 }
 
 // 文件列表中的「网页播放」按钮 (使用上面已定义的 playFile)

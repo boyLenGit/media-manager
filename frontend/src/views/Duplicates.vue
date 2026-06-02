@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Document, Folder, Delete, Connection } from '@element-plus/icons-vue'
 import { libraryToolsApi, type DuplicateGroup, type DuplicateMember } from '@/api/libraryTools'
+import { copyText } from '@/utils/clipboard'
 
 const router = useRouter()
 const groups = ref<DuplicateGroup[]>([])
@@ -59,8 +60,9 @@ const openDetail = (id: number) => router.push(`/media/${id}`)
 
 const copyPath = async (path?: string) => {
   if (!path) return
-  await navigator.clipboard.writeText(path)
-  ElMessage.success('已复制路径')
+  const ok = await copyText(path)
+  if (ok) ElMessage.success('已复制路径')
+  else ElMessage.error('复制失败,请手动选中文本复制')
 }
 
 // 合并:把组里其他成员合并到 keep

@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Grid, List as ListIcon, Star } from '@element-plus/icons-vue'
+import { Search, Refresh, Grid, List as ListIcon, Star, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { mediaApi, type MediaItemBrief, type MediaListParams } from '@/api/media'
 import { authorsApi, type Author } from '@/api/authors'
 import { mediaTypesApi, type MediaType } from '@/api/mediaTypes'
@@ -34,6 +34,29 @@ const filters = reactive<MediaListParams>({
 })
 
 const view = ref<'card' | 'list'>('card')
+
+// 卡片列数 (1 行多少个卡片) — 桌面 6 默认, 持久化
+const COLS_KEY = 'media-manager.libraryCols'
+const PAGE_SIZE_KEY = 'media-manager.libraryPageSize'
+const cardCols = ref<number>(Number(localStorage.getItem(COLS_KEY)) || 6)
+const setCardCols = (n: number) => {
+  cardCols.value = Math.min(12, Math.max(2, Math.round(n)))
+  localStorage.setItem(COLS_KEY, String(cardCols.value))
+}
+// 卡片 col span (24 栅格制): 24 / cardCols, 向下取整
+const cardSpan = computed(() => {
+  const s = Math.floor(24 / cardCols.value)
+  return s < 1 ? 1 : s
+})
+
+// 每页条数(可调) — 默认 24
+filters.limit = Number(localStorage.getItem(PAGE_SIZE_KEY)) || 24
+const onPageSizeChange = (size: number) => {
+  filters.limit = size
+  filters.offset = 0
+  localStorage.setItem(PAGE_SIZE_KEY, String(size))
+  fetch()
+}
 
 // 多选
 const selectedIds = ref<number[]>([])
@@ -314,7 +337,7 @@ onMounted(async () => {
       </el-col>
 
       <!-- 右侧主内容 -->
-      <el-col :xs="24" :sm="24" :md="17" :lg="18" :xl="19">
+      <el-col :xs="24" :sm="24" :md="17" :lg="18" :xl="19" class="main-col">
         <div class="toolbar">
           <el-input
             v-model="filters.q"
@@ -337,6 +360,22 @@ onMounted(async () => {
           <div class="spacer" />
 
           <span class="total-hint" v-if="!loading">共 {{ total }} 个资源</span>
+
+          <!-- 卡片缩放(仅卡片视图,移动端隐藏) -->
+          <div v-if="view === 'card'" class="zoom-control">
+            <el-icon class="zoom-icon" @click="setCardCols(cardCols + 1)" title="缩小卡片"><ZoomOut /></el-icon>
+            <el-slider
+              :model-value="cardCols"
+              :min="2"
+              :max="12"
+              :step="1"
+              :show-tooltip="false"
+              class="zoom-slider"
+              @update:model-value="(v: number | number[]) => setCardCols(Array.isArray(v) ? v[0] : v)"
+            />
+            <el-icon class="zoom-icon" @click="setCardCols(cardCols - 1)" title="放大卡片"><ZoomIn /></el-icon>
+          </div>
+
           <el-button-group>
             <el-button :type="view === 'card' ? 'primary' : ''" :icon="Grid" @click="view = 'card'" />
             <el-button :type="view === 'list' ? 'primary' : ''" :icon="ListIcon" @click="view = 'list'" />
@@ -381,22 +420,22 @@ onMounted(async () => {
           </el-card>
         </transition>
 
-        <el-card v-loading="loading" body-style="padding: 12px">
+        <el-card v-loading="loading" body-style="padding: 12px" class="list-card">
           <el-empty
             v-if="!loading && items.length === 0"
             description="暂无资源,请先去「设置 → 扫描路径」添加目录并执行扫描"
           />
 
           <!-- 卡片视图 -->
-          <el-row v-if="view === 'card'" :gutter="12">
+          <el-row v-if="view === 'card'" :gutter="12" class="card-grid">
             <el-col
               v-for="m in items"
               :key="m.id"
               :xs="12"
-              :sm="8"
-              :md="6"
-              :lg="4"
-              :xl="4"
+              :sm="cardSpan * 2 < 24 ? cardSpan * 2 : 12"
+              :md="cardSpan"
+              :lg="cardSpan"
+              :xl="cardSpan"
             >
               <div class="media-card" :class="{ selected: isSelected(m.id) }">
                 <div class="cover" @click.stop="openDetail(m.id)">
@@ -435,6 +474,8 @@ onMounted(async () => {
             v-else
             :data="items"
             stripe
+            class="list-table"
+            height="100%"
             @selection-change="(rows: MediaItemBrief[]) => (selectedIds = rows.map((r) => r.id))"
           >
             <el-table-column type="selection" width="50" />
@@ -476,14 +517,16 @@ onMounted(async () => {
             </el-table-column>
           </el-table>
 
-          <div v-if="total > (filters.limit || 24)" class="pager">
+          <div v-if="total > 0" class="pager">
             <el-pagination
               background
-              layout="prev, pager, next, total"
+              layout="prev, pager, next, sizes, total"
               :total="total"
               :page-size="filters.limit"
               :current-page="currentPage"
+              :page-sizes="[12, 24, 48, 96, 200]"
               @current-change="handlePageChange"
+              @size-change="onPageSizeChange"
             />
           </div>
         </el-card>
@@ -560,13 +603,100 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 撑满 el-main 可视区(el-main 默认 flex:1 + padding:16px),
+     不让整页滚动 — 卡片网格自己滚 */
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
+.library > .el-row {
+  flex: 1;
+  min-height: 0;
+}
+.library > .el-row :deep(> .el-col) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+/* 左侧筛选 — 自身可滚 */
+.filter-card {
+  max-height: 100%;
+  overflow-y: auto;
+  align-self: flex-start;
+  width: 100%;
+}
+
+/* 右侧主区列容器 — 占满纵向空间 */
+.main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.main-col > .toolbar {
+  flex-shrink: 0;
+}
+.main-col > .batch-bar {
+  flex-shrink: 0;
+}
+/* 卡片区 card 容器 撑满剩余高度,内部滚动 */
+.list-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.list-card :deep(> .el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+}
+/* 卡片网格滚动区 */
+.card-grid {
+  flex: 1;
+  overflow-y: auto;
+  align-content: flex-start;
+}
+.list-table {
+  flex: 1;
+}
+.pager {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
 .toolbar {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-bottom: 12px;
   flex-wrap: wrap;
+}
+.zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border-left: 1px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
+}
+.zoom-icon {
+  cursor: pointer;
+  color: #6b7280;
+  transition: color 0.15s;
+}
+.zoom-icon:hover {
+  color: #3b82f6;
+}
+.zoom-slider {
+  width: 100px;
 }
 .spacer {
   flex: 1;
@@ -580,8 +710,23 @@ onMounted(async () => {
 
 /* 移动端: filter-card 顶部堆叠,toolbar 文字小一些, input 单独占一行 */
 @media (max-width: 768px) {
+  .library {
+    /* 移动端不强制 100% 高度,允许整页滚动(filter card + 卡片网格 一起) */
+    height: auto;
+    min-height: 100%;
+  }
+  .library > .el-row {
+    flex: initial;
+  }
   .filter-card {
     margin-bottom: 12px;
+    max-height: none;
+  }
+  .list-card {
+    flex: initial;
+  }
+  .card-grid {
+    overflow-y: visible;
   }
   .toolbar :deep(.el-input),
   .toolbar :deep(.el-select) {
@@ -592,6 +737,9 @@ onMounted(async () => {
   .total-hint {
     width: 100%;
     margin-right: 0;
+  }
+  .zoom-control {
+    display: none; /* 触屏调整列数没意义 */
   }
 }
 
