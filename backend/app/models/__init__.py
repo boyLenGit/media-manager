@@ -322,3 +322,30 @@ class AuditLog(SQLModel, table=True):
     ip: Optional[str] = None
     user_agent: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
+
+
+class Bookmark(SQLModel, table=True):
+    """视频时间点书签。
+
+    一个书签 = (media_item, 时间秒, 标题, [可选 note], [多个 tag])
+    标签复用 tag 表,通过 bookmark_tag 多对多挂上。
+    """
+
+    __tablename__ = "bookmark"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    media_item_id: int = Field(foreign_key="media_item.id")
+    file_asset_id: Optional[int] = Field(default=None, foreign_key="file_asset.id")
+    position_seconds: float
+    title: str
+    note: Optional[str] = None
+    created_by: Optional[int] = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+class BookmarkTag(SQLModel, table=True):
+    """书签 ↔ 标签的多对多。"""
+
+    __tablename__ = "bookmark_tag"
+    bookmark_id: int = Field(foreign_key="bookmark.id", primary_key=True)
+    tag_id: int = Field(foreign_key="tag.id", primary_key=True)

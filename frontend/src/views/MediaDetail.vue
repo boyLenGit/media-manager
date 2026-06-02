@@ -23,6 +23,7 @@ import {
   type ResumePosition,
 } from '@/api/playback'
 import { filesApi } from '@/api/files'
+import { bookmarksApi, type Bookmark } from '@/api/bookmarks'
 import { useAuthStore } from '@/store/auth'
 import PlayerDialog from '@/components/PlayerDialog.vue'
 import MediaEditDialog from '@/components/MediaEditDialog.vue'
@@ -44,6 +45,10 @@ const playerOpen = ref(false)
 const playingFileId = ref(0)
 const playingFilename = ref('')
 const playingDuration = ref<number | undefined>(undefined)
+const playingInitialSeek = ref<number | undefined>(undefined)
+
+// 书签
+const bookmarks = ref<Bookmark[]>([])
 
 // 编辑弹窗
 const editOpen = ref(false)
@@ -114,16 +119,50 @@ const fetch = async () => {
     media.value = await mediaApi.detail(id)
     playOpts.value = await playbackApi.getOptions(id)
     resume.value = await playbackApi.getResume(id)
+    // 拉书签(失败不阻塞主流程)
+    try {
+      bookmarks.value = await bookmarksApi.list({ media_item_id: id })
+    } catch {
+      bookmarks.value = []
+    }
   } finally {
     loading.value = false
   }
 }
 
-const openWebPlayer = (fileId: number, filename: string, duration?: number) => {
+const openWebPlayer = (
+  fileId: number,
+  filename: string,
+  duration?: number,
+  initialSeek?: number,
+) => {
   playingFileId.value = fileId
   playingFilename.value = filename
   playingDuration.value = duration
+  playingInitialSeek.value = initialSeek
   playerOpen.value = true
+}
+
+// 跳到书签:打开播放器并 seek 到该位置
+const playFromBookmark = (b: Bookmark) => {
+  if (!primaryFile.value) {
+    ElMessage.warning('暂无可播放文件')
+    return
+  }
+  // 使用书签 file_asset_id(若有),否则主文件
+  const fid = b.file_asset_id || primaryFile.value.file_asset_id
+  const target =
+    media.value?.files.find((f) => f.file_asset_id === fid) || primaryFile.value
+  // 检查可网播
+  const entry = playOpts.value?.files.find((f) => f.file_asset_id === fid)
+  if (!entry?.web_playable) {
+    ElMessage.warning(
+      entry?.web_unplayable_reason ||
+        '该文件无法在浏览器直放,请用「本地播放」复制链接到 IINA / VLC',
+    )
+    return
+  }
+  openWebPlayer(fid, target.filename, target.duration_seconds, b.position_seconds)
 }
 
 const playPrimary = () => {
@@ -551,6 +590,37 @@ onMounted(fetch)
         </div>
       </el-card>
 
+      <!-- 书签 -->
+      <el-card v-if="bookmarks.length > 0" class="mt-16" header="书签">
+        <div class="bookmark-list">
+          <div
+            v-for="b in bookmarks"
+            :key="b.id"
+            class="bookmark-item"
+            @click="playFromBookmark(b)"
+          >
+            <el-button size="small" type="primary" :icon="VideoPlay" class="bm-time-btn">
+              {{ formatDuration(b.position_seconds) }}
+            </el-button>
+            <div class="bm-content">
+              <div class="bm-title">{{ b.title }}</div>
+              <div v-if="b.note" class="bm-note">{{ b.note }}</div>
+              <div v-if="b.tags.length" class="bm-tags">
+                <el-tag
+                  v-for="t in b.tags"
+                  :key="t.id"
+                  size="small"
+                  :color="t.color"
+                  effect="light"
+                >
+                  {{ t.name }}
+                </el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
       <el-card class="mt-16" header="文件列表">
         <el-empty v-if="!media.files.length" description="无文件" />
         <el-table v-else :data="media.files" stripe>
@@ -618,6 +688,7 @@ onMounted(fetch)
       :file-asset-id="playingFileId"
       :filename="playingFilename"
       :duration-hint="playingDuration"
+      :initial-seek="playingInitialSeek"
     />
 
     <MediaEditDialog v-model="editOpen" :media="media" @saved="onMediaSaved" />
@@ -727,5 +798,49 @@ onMounted(fetch)
   .info-value {
     font-size: 13px;
   }
+}
+
+/* 书签列表 */
+.bookmark-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bookmark-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.bookmark-item:hover {
+  background: #f3f4f6;
+}
+.bm-time-btn {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.bm-content {
+  flex: 1;
+  min-width: 0;
+}
+.bm-title {
+  font-weight: 500;
+  font-size: 14px;
+  color: #1f2937;
+}
+.bm-note {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+.bm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
 }
 </style>

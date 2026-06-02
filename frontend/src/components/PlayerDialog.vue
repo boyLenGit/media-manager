@@ -13,8 +13,10 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
 import { ElMessage } from 'element-plus'
+import { Bell } from '@element-plus/icons-vue'
 import { filesApi, type SubtitleInfo } from '@/api/files'
 import { playbackApi } from '@/api/playback'
+import BookmarkDrawer from './BookmarkDrawer.vue'
 
 interface Props {
   modelValue: boolean
@@ -22,6 +24,8 @@ interface Props {
   fileAssetId: number
   filename?: string
   durationHint?: number
+  /** 播放器打开时直接跳到的位置(秒)。优先于 resume position。 */
+  initialSeek?: number
 }
 
 const props = defineProps<Props>()
@@ -38,10 +42,35 @@ const errorMsg = ref('')
 const subtitles = ref<SubtitleInfo[]>([])
 const activeSubId = ref<number | null>(null)
 
+// 书签抽屉
+const bookmarkDrawerOpen = ref(false)
+// 当前播放时间(秒) — 用于打开抽屉时给"在当前位置添加"按钮提供初值
+const currentTime = ref(0)
+
 let player: Artplayer | null = null
 let hls: Hls | null = null
 let progressTimer: number | null = null
 let lastReportedPosition = -1
+
+const onJumpTo = (sec: number) => {
+  if (player && Number.isFinite(sec)) {
+    player.currentTime = sec
+    if (player.video?.paused) {
+      try {
+        player.play()
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+const openBookmarks = () => {
+  if (player) {
+    currentTime.value = player.currentTime || 0
+  }
+  bookmarkDrawerOpen.value = true
+}
 
 const cleanup = () => {
   if (progressTimer) {
@@ -110,13 +139,17 @@ const setupPlayer = async () => {
     }
     subtitles.value = subList
 
-    // 3. 拿续播位置
+    // 3. 拿续播位置(initialSeek 优先)
     let resumePos = 0
-    try {
-      const r = await playbackApi.getResume(props.mediaId, props.fileAssetId)
-      resumePos = r.position_seconds || 0
-    } catch {
-      /* ignore */
+    if (props.initialSeek && Number.isFinite(props.initialSeek) && props.initialSeek > 0) {
+      resumePos = props.initialSeek
+    } else {
+      try {
+        const r = await playbackApi.getResume(props.mediaId, props.fileAssetId)
+        resumePos = r.position_seconds || 0
+      } catch {
+        /* ignore */
+      }
     }
 
     // 4. 初始化 Artplayer (不传 subtitle,后续用 switch 加载)
@@ -169,14 +202,19 @@ const setupPlayer = async () => {
 
     // 5. ready 后处理字幕和续播
     player.on('ready', async () => {
-      // 续播跳转
+      // 跳转(续播 / 书签)
       if (
-        resumePos > 5 &&
+        resumePos > 1 &&
         player!.duration > 0 &&
-        resumePos < player!.duration - 5
+        resumePos < player!.duration - 1
       ) {
         player!.currentTime = resumePos
-        ElMessage.info(`已跳转到上次位置 ${formatTime(resumePos)}`)
+        const isInitial = props.initialSeek && Math.abs(resumePos - props.initialSeek) < 0.1
+        ElMessage.info(
+          isInitial
+            ? `跳转到书签 ${formatTime(resumePos)}`
+            : `已跳转到上次位置 ${formatTime(resumePos)}`,
+        )
       }
 
       // 自动加载第一个字幕轨道
@@ -278,22 +316,33 @@ onBeforeUnmount(() => {
       <el-alert v-if="errorMsg" type="error" :title="errorMsg" :closable="false" />
       <div ref="containerRef" class="player" />
 
-      <div v-if="subtitles.length > 0" class="sub-bar">
-        <span class="label">字幕:</span>
-        <el-button size="small" :type="activeSubId === null ? 'primary' : ''" @click="closeSubtitle">
-          关闭
-        </el-button>
-        <el-button
-          v-for="s in subtitles"
-          :key="s.id"
-          size="small"
-          :type="activeSubId === s.id ? 'primary' : ''"
-          @click="loadSubtitle(s)"
-        >
-          {{ s.language_hint || s.filename }}
-        </el-button>
+      <div class="action-bar">
+        <el-button :icon="Bell" size="small" @click="openBookmarks">书签</el-button>
+        <div v-if="subtitles.length > 0" class="sub-bar">
+          <span class="label">字幕:</span>
+          <el-button size="small" :type="activeSubId === null ? 'primary' : ''" @click="closeSubtitle">
+            关闭
+          </el-button>
+          <el-button
+            v-for="s in subtitles"
+            :key="s.id"
+            size="small"
+            :type="activeSubId === s.id ? 'primary' : ''"
+            @click="loadSubtitle(s)"
+          >
+            {{ s.language_hint || s.filename }}
+          </el-button>
+        </div>
       </div>
     </div>
+
+    <BookmarkDrawer
+      v-model="bookmarkDrawerOpen"
+      :media-id="mediaId"
+      :file-asset-id="fileAssetId"
+      :current-time="currentTime"
+      @jump="onJumpTo"
+    />
   </el-dialog>
 </template>
 
@@ -309,6 +358,12 @@ onBeforeUnmount(() => {
   background: #000;
   border-radius: 4px;
   overflow: hidden;
+}
+.action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
 }
 .sub-bar {
   display: flex;

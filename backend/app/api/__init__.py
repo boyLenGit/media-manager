@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from app.api import (
     auth,
     authors,
+    bookmarks,
     downloads,
     files,
     health,
@@ -49,4 +50,5 @@ api_router.include_router(jellyfin.router, prefix="/jellyfin", tags=["jellyfin"]
 api_router.include_router(authors.router, prefix="/authors", tags=["authors"], dependencies=protected)
 api_router.include_router(media_types.router, prefix="/media-types", tags=["media-types"], dependencies=protected)
 api_router.include_router(tags.router, prefix="/tags", tags=["tags"], dependencies=protected)
+api_router.include_router(bookmarks.router, prefix="/bookmarks", tags=["bookmarks"], dependencies=protected)
 api_router.include_router(settings_api.router, prefix="/settings", tags=["settings"], dependencies=protected)
