@@ -77,13 +77,32 @@ class QBittorrentProvider(DownloaderProvider):
                 data={"username": self.username, "password": self.password},
                 headers={"Referer": self.base_url},
             )
-            if r.status_code != 200 or r.text.strip() != "Ok.":
+            # qB 不同版本对 /auth/login 返回不同:
+            #   - 老版本(4.1~4.4): 200 OK + body "Ok."
+            #   - 新版本(4.5+):    204 No Content + 空 body
+            #   - 失败:            200 + body "Fails." (不会给 401/403)
+            ok = (
+                r.status_code == 204
+                or (r.status_code == 200 and r.text.strip() == "Ok.")
+            )
+            if not ok:
                 self._authenticated = False
+                # 从 cookie 看是否其实成功(Set-Cookie: SID=…)
+                got_sid = any(
+                    c.name.startswith("SID") or c.name.startswith("QBT_SID")
+                    for c in self._client.cookies.jar
+                )
+                if got_sid and r.status_code in (200, 204):
+                    self._authenticated = True
+                    logger.info(
+                        "qBittorrent login OK (sid cookie set, status=%s)", r.status_code
+                    )
+                    return
                 raise RuntimeError(
                     f"qbittorrent login failed (status={r.status_code} body={r.text!r})"
                 )
             self._authenticated = True
-            logger.info("qBittorrent login OK at %s", self.base_url)
+            logger.info("qBittorrent login OK at %s (status=%s)", self.base_url, r.status_code)
 
     async def _request(self, method: str, path: str, **kw: Any) -> httpx.Response:
         """带自动登录重试的请求。"""
@@ -128,7 +147,11 @@ class QBittorrentProvider(DownloaderProvider):
             "/api/v2/torrents/add",
             data=data,
         )
-        if r.status_code != 200 or r.text.strip() != "Ok.":
+        # qB 4.5+ 可能返回 204 No Content;老版返回 200 + "Ok."
+        ok = r.status_code in (200, 204) and (
+            r.status_code == 204 or r.text.strip() == "Ok."
+        )
+        if not ok:
             raise RuntimeError(f"add_magnet failed: {r.status_code} {r.text!r}")
 
         # qB 添加后不直接返回 hash,需要从 magnet 里解析
