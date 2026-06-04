@@ -13,7 +13,6 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
 import { ElMessage } from 'element-plus'
-import { Bell } from '@element-plus/icons-vue'
 import { filesApi, type SubtitleInfo } from '@/api/files'
 import { playbackApi } from '@/api/playback'
 import BookmarkDrawer from './BookmarkDrawer.vue'
@@ -68,6 +67,14 @@ const onJumpTo = (sec: number) => {
 const openBookmarks = () => {
   if (player) {
     currentTime.value = player.currentTime || 0
+    // 抽屉默认 append 到 body,在浏览器全屏元素之外会不可见。
+    // 简单稳妥的做法:打开抽屉时退出全屏,让 dialog + drawer 走正常 DOM。
+    try {
+      if (player.fullscreen) player.fullscreen = false
+      if (player.fullscreenWeb) player.fullscreenWeb = false
+    } catch {
+      /* ignore */
+    }
   }
   bookmarkDrawerOpen.value = true
 }
@@ -179,6 +186,23 @@ const setupPlayer = async () => {
       playsInline: true,
       airplay: true,
       theme: '#3b82f6',
+      // 自定义控件:在控件栏右侧加一个"书签"按钮
+      // 这样无论是否全屏都能打开书签抽屉
+      controls: [
+        {
+          name: 'bookmark',
+          position: 'right',
+          tooltip: '书签',
+          html: `
+            <div style="display:flex;align-items:center;justify-content:center;width:36px;height:100%;cursor:pointer;color:#fff;">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                <path d="M6 3a2 2 0 0 0-2 2v16l8-4 8 4V5a2 2 0 0 0-2-2H6Z"/>
+              </svg>
+            </div>
+          `,
+          click: () => openBookmarks(),
+        },
+      ],
     }
 
     if (isHls) {
@@ -316,23 +340,20 @@ onBeforeUnmount(() => {
       <el-alert v-if="errorMsg" type="error" :title="errorMsg" :closable="false" />
       <div ref="containerRef" class="player" />
 
-      <div class="action-bar">
-        <el-button :icon="Bell" size="small" @click="openBookmarks">书签</el-button>
-        <div v-if="subtitles.length > 0" class="sub-bar">
-          <span class="label">字幕:</span>
-          <el-button size="small" :type="activeSubId === null ? 'primary' : ''" @click="closeSubtitle">
-            关闭
-          </el-button>
-          <el-button
-            v-for="s in subtitles"
-            :key="s.id"
-            size="small"
-            :type="activeSubId === s.id ? 'primary' : ''"
-            @click="loadSubtitle(s)"
-          >
-            {{ s.language_hint || s.filename }}
-          </el-button>
-        </div>
+      <div v-if="subtitles.length > 0" class="sub-bar">
+        <span class="label">字幕:</span>
+        <el-button size="small" :type="activeSubId === null ? 'primary' : ''" @click="closeSubtitle">
+          关闭
+        </el-button>
+        <el-button
+          v-for="s in subtitles"
+          :key="s.id"
+          size="small"
+          :type="activeSubId === s.id ? 'primary' : ''"
+          @click="loadSubtitle(s)"
+        >
+          {{ s.language_hint || s.filename }}
+        </el-button>
       </div>
     </div>
 
@@ -358,12 +379,6 @@ onBeforeUnmount(() => {
   background: #000;
   border-radius: 4px;
   overflow: hidden;
-}
-.action-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
 }
 .sub-bar {
   display: flex;
