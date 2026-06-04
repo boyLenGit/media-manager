@@ -50,6 +50,7 @@ let player: Artplayer | null = null
 let hls: Hls | null = null
 let progressTimer: number | null = null
 let lastReportedPosition = -1
+let keydownHandler: ((e: KeyboardEvent) => void) | null = null
 
 const onJumpTo = (sec: number) => {
   if (player && Number.isFinite(sec)) {
@@ -83,6 +84,10 @@ const cleanup = () => {
   if (progressTimer) {
     clearInterval(progressTimer)
     progressTimer = null
+  }
+  if (keydownHandler) {
+    window.removeEventListener('keydown', keydownHandler, true)
+    keydownHandler = null
   }
   if (hls) {
     try {
@@ -223,6 +228,72 @@ const setupPlayer = async () => {
     }
 
     player = new Artplayer(options)
+
+    // 注册全局键盘快捷键 (capture 阶段)
+    // dialog 容器吞掉按键事件,所以走 capture 在到达 dialog 之前接管
+    // 同时把 player.isFocus 主动置 true,确保 artplayer 内置 hotkey 也生效
+    keydownHandler = (e: KeyboardEvent) => {
+      if (!player || !visible.value) return
+      // 输入框 / 文本域 内不拦截
+      const tag = (document.activeElement?.tagName || '').toUpperCase()
+      const editable = (document.activeElement as HTMLElement | null)?.getAttribute(
+        'contenteditable',
+      )
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || editable === 'true' || editable === '') return
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+
+      const SEEK = 5
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault()
+          e.stopPropagation()
+          try {
+            player.backward = SEEK
+          } catch {
+            /* ignore */
+          }
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          e.stopPropagation()
+          try {
+            player.forward = SEEK
+          } catch {
+            /* ignore */
+          }
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          e.stopPropagation()
+          try {
+            player.volume = Math.min(1, (player.volume || 0) + 0.1)
+          } catch {
+            /* ignore */
+          }
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          e.stopPropagation()
+          try {
+            player.volume = Math.max(0, (player.volume || 0) - 0.1)
+          } catch {
+            /* ignore */
+          }
+          break
+        case ' ':
+        case 'Spacebar': // legacy
+          e.preventDefault()
+          e.stopPropagation()
+          try {
+            player.toggle()
+          } catch {
+            /* ignore */
+          }
+          break
+      }
+    }
+    // capture: true,优先级最高,先于 el-dialog 默认事件
+    window.addEventListener('keydown', keydownHandler, true)
 
     // 5. ready 后处理字幕和续播
     player.on('ready', async () => {
