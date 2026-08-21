@@ -4,7 +4,6 @@ import ScanPathsTab from './settings/ScanPathsTab.vue'
 import UsersTab from './settings/UsersTab.vue'
 import PlaybackTargetsTab from './settings/PlaybackTargetsTab.vue'
 import SmbConfigTab from './settings/SmbConfigTab.vue'
-import AuthorsTab from './settings/AuthorsTab.vue'
 import MediaTypesTab from './settings/MediaTypesTab.vue'
 import TagsTab from './settings/TagsTab.vue'
 import DownloaderTab from './settings/DownloaderTab.vue'
@@ -38,9 +37,6 @@ const tabPosition = computed(() => (isMobile.value ? 'top' : 'left'))
         </el-tab-pane>
         <el-tab-pane label="资源类型" name="types">
           <MediaTypesTab v-if="active === 'types'" />
-        </el-tab-pane>
-        <el-tab-pane label="作者" name="authors">
-          <AuthorsTab v-if="active === 'authors'" />
         </el-tab-pane>
         <el-tab-pane label="标签" name="tags">
           <TagsTab v-if="active === 'tags'" />

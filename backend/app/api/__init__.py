@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 
 from app.api import (
     auth,
+    author_covers,
     authors,
     bookmarks,
     downloads,
@@ -34,6 +35,8 @@ api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 # 缩略图也公开访问 (图片资源不需要鉴权,且 URL 用 media_id 不可枚举出敏感信息)
 api_router.include_router(thumbnails.router, prefix="/thumbnails", tags=["thumbnails"])
+# 作者封面同理:公开访问的图片资源
+api_router.include_router(author_covers.router, prefix="/author-covers", tags=["author-covers"])
 
 # --- 需要登录 ---
 protected = [Depends(require_user)]

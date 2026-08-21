@@ -71,6 +71,7 @@ class Author(TimestampMixin, table=True):
     name: str = Field(unique=True, index=True)
     alias: Optional[str] = None
     description: Optional[str] = None
+    cover_path: Optional[str] = None
 
 
 class MediaType(SQLModel, table=True):

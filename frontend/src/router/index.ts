@@ -32,6 +32,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '资源库' },
       },
       {
+        path: 'authors',
+        name: 'authors',
+        component: () => import('@/views/Authors.vue'),
+        meta: { title: '作者' },
+      },
+      {
+        path: 'authors/:id',
+        name: 'author-detail',
+        component: () => import('@/views/AuthorDetail.vue'),
+        meta: { title: '作者详情' },
+      },
+      {
         path: 'duplicates',
         name: 'duplicates',
         component: () => import('@/views/Duplicates.vue'),
