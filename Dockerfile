@@ -56,7 +56,8 @@ RUN pip install --no-cache-dir -i "$PIP_INDEX" \
     python-multipart \
     aiofiles \
     'argon2-cffi>=23.1.0' \
-    'pyjwt>=2.10.0'
+    'pyjwt>=2.10.0' \
+    'charset-normalizer>=3.4.0'
 
 # 复制后端代码
 COPY backend/app/ ./backend/app/

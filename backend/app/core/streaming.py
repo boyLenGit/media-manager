@@ -180,3 +180,44 @@ def _make_content_disposition(filename: str) -> str:
         encoded = quote(filename, safe="")
         return f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
     return f'inline; filename="{ascii_fallback}"'
+
+
+# 字幕文件按扩展名分类,走文本响应(自动编码检测转 UTF-8),不走 Range 分片
+# (字幕通常几十 KB,远小于视频,分片没有意义;而且分片会破坏编码检测所需的完整样本)
+SUBTITLE_TEXT_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt"}
+
+
+def make_subtitle_response(path: str | Path, request: Request | None = None) -> Response:
+    """构造字幕文件响应,自动检测源编码并统一转换为 UTF-8。
+
+    与 make_file_response 分开实现的原因:
+    - 字幕文件小,一次性读入内存做编码检测/转换即可,不需要 Range 分片
+    - 视频走的通用二进制流式转发逻辑不应该承担"解析文本内容"的职责
+    """
+    from app.services.subtitle_encoding import normalize_subtitle_to_utf8
+
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="file_not_found")
+
+    ext = p.suffix.lower()
+    mime = guess_mime(p)
+    content_type = f"{mime}; charset=utf-8" if ext in SUBTITLE_TEXT_EXTENSIONS else mime
+
+    # HEAD 请求不需要真的读文件做编码转换,只回头(和 make_file_response 的 HEAD 分支行为一致)
+    if request is not None and request.method == "HEAD":
+        return Response(
+            status_code=200,
+            headers={"Cache-Control": "private, max-age=0"},
+            media_type=mime,
+        )
+
+    raw = p.read_bytes()
+    data = normalize_subtitle_to_utf8(raw) if ext in SUBTITLE_TEXT_EXTENSIONS else raw
+
+    headers = {
+        "Content-Length": str(len(data)),
+        "Cache-Control": "private, max-age=0",
+        "Content-Type": content_type,
+    }
+    return Response(content=data, status_code=200, headers=headers, media_type=mime)

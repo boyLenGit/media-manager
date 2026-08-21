@@ -12,9 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlmodel import Session, select
 
 from app.core.deps import require_user
-from app.core.file_types import is_web_playable
+from app.core.file_types import SUBTITLE_EXTENSIONS, is_web_playable
 from app.core.security import create_stream_token, verify_stream_token
-from app.core.streaming import make_file_response
+from app.core.streaming import make_file_response, make_subtitle_response
 from app.db.session import get_session
 from app.models import FileAsset, MediaFile, User
 from app.services.filename_parser import parse_filename
@@ -65,6 +65,12 @@ def stream_file(
         raise HTTPException(status_code=404, detail="file_not_found")
     if asset.missing:
         raise HTTPException(status_code=410, detail="file_missing")
+
+    # 字幕文件走独立响应:自动检测源编码(GBK/Big5/Shift-JIS 等)并统一转成 UTF-8,
+    # 避免浏览器按 UTF-8 解码非 UTF-8 字幕产生静默乱码。
+    ext = (asset.extension or "").lower()
+    if ext in SUBTITLE_EXTENSIONS:
+        return make_subtitle_response(asset.path, request=request)
 
     return make_file_response(request, asset.path, filename=asset.filename)
 
