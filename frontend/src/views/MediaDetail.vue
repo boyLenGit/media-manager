@@ -634,6 +634,11 @@ onMounted(fetch)
               <el-tag v-if="row.missing" type="danger" size="small">失踪</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="路径" min-width="280" class-name="path-col">
+            <template #default="{ row }">
+              <span class="file-path">{{ row.path }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="清晰度" width="100">
             <template #default="{ row }">{{ row.quality || '-' }}</template>
           </el-table-column>
@@ -840,5 +845,18 @@ onMounted(fetch)
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 6px;
+}
+
+/* 文件列表 - 路径列允许换行 */
+.file-path {
+  display: inline-block;
+  white-space: normal;
+  word-break: break-all;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+:deep(.path-col .cell) {
+  white-space: normal;
 }
 </style>
