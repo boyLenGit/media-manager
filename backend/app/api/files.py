@@ -16,7 +16,7 @@ from app.core.file_types import SUBTITLE_EXTENSIONS, is_web_playable
 from app.core.security import create_stream_token, verify_stream_token
 from app.core.streaming import make_file_response, make_subtitle_response
 from app.db.session import get_session
-from app.models import FileAsset, MediaFile, User
+from app.models import CustomSubtitle, FileAsset, MediaFile, User
 from app.services.filename_parser import parse_filename
 
 router = APIRouter()
@@ -142,9 +142,30 @@ def list_subtitles(
                     "language_hint": language_hint,
                     "match": match_kind,
                     "url": f"/api/files/{s.id}/stream",  # 字幕也走 stream-token
+                    "source": "auto",
                 }
             )
-    return out
+
+    # 用户手动上传的自定义字幕(持久化绑定,不依赖文件名规则),排最前面
+    # (用户主动上传的字幕通常是想优先使用的翻译/校正版本)
+    custom_rows = session.exec(
+        select(CustomSubtitle)
+        .where(CustomSubtitle.file_asset_id == file_id)
+        .order_by(CustomSubtitle.created_at.desc())  # type: ignore[union-attr]
+    ).all()
+    custom_out = [
+        {
+            "id": c.id,
+            "filename": c.filename,
+            "extension": f".{c.extension}",
+            "language_hint": c.language_hint,
+            "match": "custom",
+            "url": f"/api/custom-subtitles/{c.id}/stream",
+            "source": "custom",
+        }
+        for c in custom_rows
+    ]
+    return custom_out + out
 
 
 # ============================================================

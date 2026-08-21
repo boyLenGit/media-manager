@@ -12,8 +12,9 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
-import { ElMessage } from 'element-plus'
-import { filesApi, type SubtitleInfo } from '@/api/files'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, Delete } from '@element-plus/icons-vue'
+import { customSubtitlesApi, filesApi, type SubtitleInfo } from '@/api/files'
 import { playbackApi } from '@/api/playback'
 import BookmarkDrawer from './BookmarkDrawer.vue'
 
@@ -40,6 +41,8 @@ const loading = ref(false)
 const errorMsg = ref('')
 const subtitles = ref<SubtitleInfo[]>([])
 const activeSubId = ref<number | null>(null)
+const subtitleInput = ref<HTMLInputElement | null>(null)
+const uploadingSubtitle = ref(false)
 
 // 书签抽屉
 const bookmarkDrawerOpen = ref(false)
@@ -341,7 +344,12 @@ const setupPlayer = async () => {
 const loadSubtitle = async (sub: SubtitleInfo) => {
   if (!player) return
   try {
-    const t = await filesApi.streamToken(sub.id)
+    // 自定义上传字幕(custom_subtitle 表)和自动匹配字幕(file_asset 表)是两套独立 id 空间,
+    // 换取签名 URL 要走各自对应的 token 接口
+    const t =
+      sub.source === 'custom'
+        ? await customSubtitlesApi.streamToken(sub.id)
+        : await filesApi.streamToken(sub.id)
     const ext = (sub.extension || '.srt').replace(/^\./, '') || 'srt'
     // Artplayer 5.x:第二个参数是 options 对象
     player.subtitle.switch(t.url, {
@@ -353,6 +361,47 @@ const loadSubtitle = async (sub: SubtitleInfo) => {
   } catch (e) {
     console.warn('[PlayerDialog] subtitle load failed:', e)
   }
+}
+
+const triggerSubtitlePick = () => subtitleInput.value?.click()
+
+const onSubtitlePicked = async (ev: Event) => {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  uploadingSubtitle.value = true
+  try {
+    await customSubtitlesApi.upload(props.fileAssetId, file)
+    ElMessage.success('字幕已上传')
+    // 重新拉取字幕列表(新上传的排最前),并自动切换到它
+    const list = await filesApi.subtitles(props.fileAssetId)
+    subtitles.value = list
+    const newest = list.find((s) => s.source === 'custom')
+    if (newest && player) await loadSubtitle(newest)
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    if (detail === 'unsupported_subtitle_type') ElMessage.error('仅支持 srt/ass/ssa/vtt 格式')
+    else if (detail === 'file_too_large') ElMessage.error('字幕文件超过 5MB 限制')
+    else ElMessage.error('上传失败')
+  } finally {
+    uploadingSubtitle.value = false
+  }
+}
+
+const removeCustomSubtitle = async (sub: SubtitleInfo, ev: Event) => {
+  ev.stopPropagation()
+  try {
+    await ElMessageBox.confirm(`删除字幕「${sub.language_hint || sub.filename}」?`, '确认', {
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  await customSubtitlesApi.remove(sub.id)
+  if (activeSubId.value === sub.id) closeSubtitle()
+  subtitles.value = await filesApi.subtitles(props.fileAssetId)
+  ElMessage.success('已删除')
 }
 
 const formatTime = (s: number) => {
@@ -411,19 +460,38 @@ onBeforeUnmount(() => {
       <el-alert v-if="errorMsg" type="error" :title="errorMsg" :closable="false" />
       <div ref="containerRef" class="player" />
 
-      <div v-if="subtitles.length > 0" class="sub-bar">
+      <div class="sub-bar">
         <span class="label">字幕:</span>
-        <el-button size="small" :type="activeSubId === null ? 'primary' : ''" @click="closeSubtitle">
-          关闭
-        </el-button>
-        <el-button
-          v-for="s in subtitles"
-          :key="s.id"
-          size="small"
-          :type="activeSubId === s.id ? 'primary' : ''"
-          @click="loadSubtitle(s)"
-        >
-          {{ s.language_hint || s.filename }}
+        <template v-if="subtitles.length > 0">
+          <el-button size="small" :type="activeSubId === null ? 'primary' : ''" @click="closeSubtitle">
+            关闭
+          </el-button>
+          <el-button
+            v-for="s in subtitles"
+            :key="s.id"
+            size="small"
+            :type="activeSubId === s.id ? 'primary' : ''"
+            @click="loadSubtitle(s)"
+          >
+            {{ s.language_hint || s.filename }}
+            <el-icon
+              v-if="s.source === 'custom'"
+              class="sub-remove"
+              @click="(e: Event) => removeCustomSubtitle(s, e)"
+            >
+              <Delete />
+            </el-icon>
+          </el-button>
+        </template>
+        <input
+          ref="subtitleInput"
+          type="file"
+          accept=".srt,.ass,.ssa,.vtt"
+          style="display: none"
+          @change="onSubtitlePicked"
+        />
+        <el-button size="small" :icon="Upload" :loading="uploadingSubtitle" @click="triggerSubtitlePick">
+          上传字幕
         </el-button>
       </div>
     </div>
@@ -460,5 +528,12 @@ onBeforeUnmount(() => {
 .label {
   font-size: 13px;
   color: #6b7280;
+}
+.sub-remove {
+  margin-left: 4px;
+  cursor: pointer;
+}
+.sub-remove:hover {
+  color: #ef4444;
 }
 </style>

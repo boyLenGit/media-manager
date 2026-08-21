@@ -134,6 +134,22 @@ class FileAsset(TimestampMixin, table=True):
 
 
 # ============================================================
+# 自定义字幕(用户手动上传/替换,独立存储于应用数据目录)
+# ============================================================
+class CustomSubtitle(SQLModel, table=True):
+    __tablename__ = "custom_subtitle"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    file_asset_id: int = Field(foreign_key="file_asset.id", index=True)
+    filename: str
+    extension: str
+    language_hint: Optional[str] = None
+    size_bytes: Optional[int] = None
+    created_by: Optional[int] = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+# ============================================================
 # 资源-文件关联
 # ============================================================
 class MediaFile(SQLModel, table=True):

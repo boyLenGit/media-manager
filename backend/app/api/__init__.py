@@ -11,6 +11,7 @@ from app.api import (
     author_covers,
     authors,
     bookmarks,
+    custom_subtitles,
     downloads,
     files,
     health,
@@ -45,6 +46,10 @@ api_router.include_router(library.router, prefix="/media", tags=["library"], dep
 api_router.include_router(library_tools.router, prefix="/library", tags=["library-tools"], dependencies=protected)
 # files 路由内部各端点自己决定鉴权方式 (stream 走签名 token,其他走 require_user)
 api_router.include_router(files.router, prefix="/files", tags=["files"])
+# custom-subtitles 同理:stream 走签名 token,上传/删除/列表走 require_user
+api_router.include_router(
+    custom_subtitles.router, prefix="/custom-subtitles", tags=["custom-subtitles"]
+)
 api_router.include_router(scan.router, prefix="/scan", tags=["scan"], dependencies=protected)
 api_router.include_router(search.router, prefix="/search", tags=["search"], dependencies=protected)
 api_router.include_router(downloads.router, prefix="/downloads", tags=["downloads"], dependencies=protected)

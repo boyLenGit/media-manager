@@ -26,6 +26,8 @@ export interface SubtitleInfo {
   language_hint?: string
   match: string
   url: string
+  /** 'auto' = 同目录文件名自动匹配;'custom' = 用户手动上传 */
+  source?: 'auto' | 'custom'
 }
 
 export interface StreamToken {
@@ -47,4 +49,25 @@ export const filesApi = {
     const t = await http.get<StreamToken>(`/files/${id}/stream-token`).then((r) => r.data)
     return t.url
   },
+}
+
+export const customSubtitlesApi = {
+  list: (fileAssetId: number) =>
+    http.get<SubtitleInfo[]>(`/custom-subtitles/by-file/${fileAssetId}`).then((r) => r.data),
+
+  upload: (fileAssetId: number, file: File, languageHint?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (languageHint) form.append('language_hint', languageHint)
+    return http
+      .post(`/custom-subtitles/by-file/${fileAssetId}`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data)
+  },
+
+  remove: (subtitleId: number) => http.delete(`/custom-subtitles/${subtitleId}`),
+
+  streamToken: (subtitleId: number) =>
+    http.get<StreamToken>(`/custom-subtitles/${subtitleId}/stream-token`).then((r) => r.data),
 }

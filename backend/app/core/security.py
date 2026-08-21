@@ -88,3 +88,31 @@ def verify_stream_token(token: str, expected_file_id: int) -> int:
     if int(payload.get("fid", 0)) != expected_file_id:
         raise jwt.InvalidTokenError("file_id_mismatch")
     return int(payload["sub"])
+
+
+# ---- 自定义字幕流签名 token ----
+# 与视频 stream token 分开,payload 用不同的 type + csid 字段,
+# 避免自定义字幕表和 file_asset 表各自独立的 id 空间被 verify 逻辑混淆
+# (比如 custom_subtitle.id=5 与 file_asset.id=5 不应被当成同一个资源)
+def create_custom_subtitle_token(
+    user_id: int, custom_subtitle_id: int, ttl_minutes: int = 60
+) -> str:
+    expires = _now_utc() + timedelta(minutes=ttl_minutes)
+    payload = {
+        "sub": str(user_id),
+        "type": "custom_subtitle_stream",
+        "csid": custom_subtitle_id,
+        "iat": _now_utc(),
+        "exp": expires,
+    }
+    return jwt.encode(payload, _settings.jwt_secret, algorithm=_settings.jwt_algorithm)
+
+
+def verify_custom_subtitle_token(token: str, expected_id: int) -> int:
+    """验证自定义字幕流 token,返回 user_id。失败抛 jwt.PyJWTError。"""
+    payload = decode_token(token)
+    if payload.get("type") != "custom_subtitle_stream":
+        raise jwt.InvalidTokenError("wrong_token_type")
+    if int(payload.get("csid", 0)) != expected_id:
+        raise jwt.InvalidTokenError("subtitle_id_mismatch")
+    return int(payload["sub"])
