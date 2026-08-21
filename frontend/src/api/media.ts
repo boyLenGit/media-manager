@@ -22,6 +22,7 @@ export interface MediaItemBrief {
   favorite: boolean
   watch_status: string
   file_count: number
+  total_size_bytes: number
   tags: MediaTag[]
   created_at: string
   updated_at: string

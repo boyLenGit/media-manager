@@ -45,6 +45,7 @@ class MediaItemBrief(BaseModel):
     favorite: bool
     watch_status: str
     file_count: int = 0
+    total_size_bytes: int = 0
     tags: list[dict] = []
     created_at: datetime
     updated_at: datetime
@@ -110,6 +111,7 @@ def _build_brief(
     author_map: dict[int, str],
     type_map: dict[int, str],
     file_count_map: dict[int, int],
+    size_map: dict[int, int] | None = None,
 ) -> MediaItemBrief:
     tag_rows = session.exec(
         select(Tag.id, Tag.name, Tag.color, Tag.group_name)  # type: ignore[arg-type]
@@ -133,6 +135,7 @@ def _build_brief(
         favorite=item.favorite,
         watch_status=item.watch_status,
         file_count=file_count_map.get(item.id, 0),  # type: ignore[arg-type]
+        total_size_bytes=(size_map or {}).get(item.id, 0),  # type: ignore[arg-type]
         tags=tags,
         created_at=item.created_at,
         updated_at=item.updated_at,
@@ -209,16 +212,25 @@ def list_media(
         type_map = {r[0]: r[1] for r in rows}
 
     file_count_map: dict[int, int] = {}
+    size_map: dict[int, int] = {}
     if item_ids:
         rows = session.exec(
-            select(MediaFile.media_item_id, func.count(MediaFile.id))  # type: ignore[arg-type]
+            select(
+                MediaFile.media_item_id,  # type: ignore[arg-type]
+                func.count(MediaFile.id),  # type: ignore[arg-type]
+                func.coalesce(func.sum(FileAsset.size_bytes), 0),
+            )
+            .join(FileAsset, FileAsset.id == MediaFile.file_asset_id)  # type: ignore[arg-type]
             .where(MediaFile.media_item_id.in_(item_ids))  # type: ignore[union-attr]
             .group_by(MediaFile.media_item_id)
         ).all()
         file_count_map = {r[0]: r[1] for r in rows}
+        size_map = {r[0]: r[2] for r in rows}
 
     return {
-        "items": [_build_brief(session, i, author_map, type_map, file_count_map) for i in items],
+        "items": [
+            _build_brief(session, i, author_map, type_map, file_count_map, size_map) for i in items
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -274,7 +286,14 @@ def get_media(media_id: int, session: Session = Depends(get_session)) -> MediaIt
         for mf, fa in rows
     ]
 
-    brief = _build_brief(session, item, author_map, type_map, {item.id: len(files)})  # type: ignore[arg-type]
+    brief = _build_brief(
+        session,
+        item,
+        author_map,
+        type_map,
+        {item.id: len(files)},  # type: ignore[arg-type]
+        {item.id: sum(f.size_bytes or 0 for f in files)},  # type: ignore[arg-type]
+    )
     return MediaItemDetail(
         **brief.model_dump(),
         description=item.description,

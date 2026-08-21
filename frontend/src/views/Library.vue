@@ -107,6 +107,19 @@ const fetch = async () => {
   }
 }
 
+// 字节 -> 人类可读单位
+const fileSize = (bytes?: number) => {
+  if (!bytes) return '-'
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let n = bytes
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${n.toFixed(1)} ${u[i]}`
+}
+
 const loadOptions = async () => {
   const [a, t, tg, sp] = await Promise.all([
     authorsApi.list(),
@@ -579,6 +592,9 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="文件" width="80">
               <template #default="{ row }">{{ row.file_count }}</template>
+            </el-table-column>
+            <el-table-column label="大小" width="100">
+              <template #default="{ row }">{{ fileSize(row.total_size_bytes) }}</template>
             </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
