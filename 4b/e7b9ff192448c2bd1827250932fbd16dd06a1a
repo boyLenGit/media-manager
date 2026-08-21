@@ -1,0 +1,35 @@
+docs/handover/00-README.md
+  s_977e543bbc44ae::t_32a2059d6e9f7e 1-62
+docs/handover/01-背景与目标.md
+  s_977e543bbc44ae::t_643e399e16e0e2 1-76
+docs/handover/08-运维知识库.md
+  s_977e543bbc44ae::t_739f4a60f3608b 1-152
+docs/handover/02-架构总览.md
+  s_977e543bbc44ae::t_9ddef63001b8cb 1-168
+docs/handover/03-数据模型.md
+  s_977e543bbc44ae::t_73aa55f47b0f53 1-154
+docs/handover/04-功能清单.md
+  s_977e543bbc44ae::t_4a5b86edc77cdf 1-192
+docs/handover/06-开发指南.md
+  s_977e543bbc44ae::t_a114caa5d8efe0 1-182
+docs/handover/07-已知问题与路线图.md
+  s_977e543bbc44ae::t_b765e9d17344d9 1-108
+docs/handover/05-部署运维.md
+  s_977e543bbc44ae::t_6eca029d36f95d 1-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.40-trip",
+  "base_commit_sha": "4be7b9ff192448c2bd1827250932fbd16dd06a1a",
+  "prompts": {},
+  "sessions": {
+    "s_977e543bbc44ae": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1a6f00721ffe81KzuFpeb4SM51",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "boyLenGit <61423789+boyLenGit@users.noreply.github.com>"
+    }
+  }
+}
