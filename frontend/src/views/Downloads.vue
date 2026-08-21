@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, VideoPlay, VideoPause, Delete } from '@element-plus/icons-vue'
 import { downloadsApi, type DownloadTask } from '@/api/downloads'
+import { formatDateTime } from '@/utils/datetime'
 
 const tasks = ref<DownloadTask[]>([])
 const loading = ref(false)
@@ -126,7 +127,7 @@ const removeWithFiles = async (t: DownloadTask) => {
   await fetch()
 }
 
-const formatTime = (s?: string) => (s ? new Date(s).toLocaleString() : '-')
+const formatTime = formatDateTime
 
 onMounted(() => {
   fetch()

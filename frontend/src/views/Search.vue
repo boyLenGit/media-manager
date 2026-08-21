@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Download } from '@element-plus/icons-vue'
 import { searchApi, type SearchHit } from '@/api/search'
 import { downloadsApi } from '@/api/downloads'
+import { formatDate } from '@/utils/datetime'
 
 const router = useRouter()
 const q = ref('')
@@ -25,7 +26,7 @@ const fileSize = (bytes?: number) => {
   return `${n.toFixed(1)} ${u[i]}`
 }
 
-const formatTime = (s?: string) => (s ? new Date(s).toLocaleDateString() : '-')
+const formatTime = formatDate
 
 const search = async () => {
   if (!q.value) return

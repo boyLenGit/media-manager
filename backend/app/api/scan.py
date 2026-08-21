@@ -83,13 +83,20 @@ def delete_scan_path(path_id: int, session: Session = Depends(get_session)) -> N
 # ============================================================
 @router.post("/paths/{path_id}/scan", status_code=202)
 async def trigger_scan(path_id: int, session: Session = Depends(get_session)) -> dict:
-    """触发一次扫描,任务异步执行。"""
+    """触发一次扫描,任务异步执行。
+
+    同一路径已有任务在排队/运行时拒绝重复触发,避免用户误触发多次全量重扫
+    (每次都要重新 os.walk + stat 全部文件,耗时且浪费资源)。
+    """
     sp = session.get(ScanPath, path_id)
     if not sp:
         raise HTTPException(status_code=404, detail="scan_path_not_found")
     if not sp.enabled:
         raise HTTPException(status_code=400, detail="scan_path_disabled")
-    await scan_worker.enqueue(path_id)
+
+    ok = await scan_worker.enqueue(path_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="scan_already_running")
     return {"status": "queued", "scan_path_id": path_id}
 
 

@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Document, Folder, Delete, Connection } from '@element-plus/icons-vue'
 import { libraryToolsApi, type DuplicateGroup, type DuplicateMember } from '@/api/libraryTools'
 import { copyText } from '@/utils/clipboard'
+import { formatDateTime } from '@/utils/datetime'
 
 const router = useRouter()
 const groups = ref<DuplicateGroup[]>([])
@@ -37,7 +38,7 @@ const fileSize = (bytes: number) => {
   return `${n.toFixed(1)} ${u[i]}`
 }
 
-const formatTime = (s?: string) => (s ? new Date(s).toLocaleString() : '-')
+const formatTime = formatDateTime
 
 const formatDuration = (s?: number) => {
   if (!s) return '-'

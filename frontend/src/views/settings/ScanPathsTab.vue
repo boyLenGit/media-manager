@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Delete, VideoPlay, QuestionFilled } from '@element-plus/icons-vue'
 import { scanApi, type ScanPath, type ScanJob } from '@/api/scan'
+import { formatDateTime } from '@/utils/datetime'
 
 const paths = ref<ScanPath[]>([])
 const jobs = ref<ScanJob[]>([])
@@ -138,10 +139,16 @@ const remove = async (p: ScanPath) => {
 }
 
 const triggerScan = async (p: ScanPath) => {
-  await scanApi.triggerScan(p.id)
-  ElMessage.success('扫描已触发,正在执行')
-  await fetchJobs()
-  startPolling()
+  try {
+    await scanApi.triggerScan(p.id)
+    ElMessage.success('扫描已触发,正在执行')
+    await fetchJobs()
+    startPolling()
+  } catch (e: any) {
+    if (e?.response?.data?.detail === 'scan_already_running') {
+      ElMessage.warning('该路径已有扫描任务在执行,请等待完成后再试')
+    }
+  }
 }
 
 const jobStatusType = (s: string) => {
@@ -201,7 +208,7 @@ const phaseLabel = (j: ScanJob) => {
   return s
 }
 
-const formatTime = (s?: string) => (s ? new Date(s).toLocaleString() : '-')
+const formatTime = formatDateTime
 
 onMounted(async () => {
   await Promise.all([fetchPaths(), fetchJobs(), fetchMounts()])

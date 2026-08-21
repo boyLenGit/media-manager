@@ -4,10 +4,11 @@
 - 表结构以 SQL 迁移文件为准,这里只做映射
 - 关系暂不通过 ORM relationship 体现,服务层显式 JOIN,降低复杂度
 """
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 from sqlalchemy import Column, Text
+from pydantic import model_serializer
 from sqlmodel import Field, SQLModel
 
 
@@ -15,7 +16,26 @@ def _now() -> datetime:
     return datetime.utcnow()
 
 
-class TimestampMixin(SQLModel):
+class UTCAwareModel(SQLModel):
+    """所有 datetime 字段在库内统一存 naive UTC(datetime.utcnow()),
+    但序列化给前端时必须带明确的 UTC 标记,否则浏览器 Date() 会把它误当成本地时间解析,
+    导致显示时间偏移(实际偏移量 = 本地时区与 UTC 的差值,如东八区偏移 8 小时)。
+
+    这里在序列化阶段统一补上时区标记(不修改原对象状态),
+    比在每个 API 接口手动 `.isoformat() + "Z"` 更不容易遗漏。
+    """
+
+    @model_serializer(mode="wrap")
+    def _serialize_with_utc(self, handler) -> dict[str, Any]:
+        data = handler(self)
+        for k in list(data.keys()):
+            raw = getattr(self, k, None)
+            if isinstance(raw, datetime) and raw.tzinfo is None and isinstance(data.get(k), str):
+                data[k] = raw.replace(tzinfo=timezone.utc).isoformat()
+        return data
+
+
+class TimestampMixin(UTCAwareModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
@@ -74,7 +94,7 @@ class Author(TimestampMixin, table=True):
     cover_path: Optional[str] = None
 
 
-class MediaType(SQLModel, table=True):
+class MediaType(UTCAwareModel, table=True):
     __tablename__ = "media_type"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
@@ -82,7 +102,7 @@ class MediaType(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
-class Tag(SQLModel, table=True):
+class Tag(UTCAwareModel, table=True):
     __tablename__ = "tag"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
@@ -136,7 +156,7 @@ class FileAsset(TimestampMixin, table=True):
 # ============================================================
 # 自定义字幕(用户手动上传/替换,独立存储于应用数据目录)
 # ============================================================
-class CustomSubtitle(SQLModel, table=True):
+class CustomSubtitle(UTCAwareModel, table=True):
     __tablename__ = "custom_subtitle"
     id: Optional[int] = Field(default=None, primary_key=True)
     file_asset_id: int = Field(foreign_key="file_asset.id", index=True)
@@ -152,7 +172,7 @@ class CustomSubtitle(SQLModel, table=True):
 # ============================================================
 # 资源-文件关联
 # ============================================================
-class MediaFile(SQLModel, table=True):
+class MediaFile(UTCAwareModel, table=True):
     __tablename__ = "media_file"
     id: Optional[int] = Field(default=None, primary_key=True)
     media_item_id: int = Field(foreign_key="media_item.id", index=True)
@@ -170,7 +190,7 @@ class MediaFile(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
-class MediaTag(SQLModel, table=True):
+class MediaTag(UTCAwareModel, table=True):
     __tablename__ = "media_tag"
     media_item_id: int = Field(foreign_key="media_item.id", primary_key=True)
     tag_id: int = Field(foreign_key="tag.id", primary_key=True)
@@ -180,7 +200,7 @@ class MediaTag(SQLModel, table=True):
 # ============================================================
 # 搜索结果
 # ============================================================
-class SearchResult(SQLModel, table=True):
+class SearchResult(UTCAwareModel, table=True):
     __tablename__ = "search_result"
     id: Optional[int] = Field(default=None, primary_key=True)
     source_id: Optional[int] = Field(default=None, foreign_key="resource_source.id")
@@ -233,7 +253,7 @@ class PlaybackTarget(TimestampMixin, table=True):
     sort_order: int = 0
 
 
-class PlaybackHistory(SQLModel, table=True):
+class PlaybackHistory(UTCAwareModel, table=True):
     __tablename__ = "playback_history"
     id: Optional[int] = Field(default=None, primary_key=True)
     media_item_id: int = Field(foreign_key="media_item.id")
@@ -248,7 +268,7 @@ class PlaybackHistory(SQLModel, table=True):
 # ============================================================
 # 去重 / 扫描
 # ============================================================
-class DuplicateMatch(SQLModel, table=True):
+class DuplicateMatch(UTCAwareModel, table=True):
     __tablename__ = "duplicate_match"
     id: Optional[int] = Field(default=None, primary_key=True)
     target_type: str  # search_result / file_asset
@@ -261,7 +281,7 @@ class DuplicateMatch(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
-class ScanJob(SQLModel, table=True):
+class ScanJob(UTCAwareModel, table=True):
     __tablename__ = "scan_job"
     id: Optional[int] = Field(default=None, primary_key=True)
     scan_path_id: Optional[int] = Field(default=None, foreign_key="scan_path.id")
@@ -289,7 +309,7 @@ class ScanJob(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
-class ScanLog(SQLModel, table=True):
+class ScanLog(UTCAwareModel, table=True):
     __tablename__ = "scan_log"
     id: Optional[int] = Field(default=None, primary_key=True)
     scan_job_id: Optional[int] = Field(default=None, foreign_key="scan_job.id")
@@ -313,7 +333,7 @@ class User(TimestampMixin, table=True):
     last_login_at: Optional[datetime] = None
 
 
-class RevokedToken(SQLModel, table=True):
+class RevokedToken(UTCAwareModel, table=True):
     __tablename__ = "revoked_token"
     jti: str = Field(primary_key=True)
     user_id: int = Field(foreign_key="user.id")
@@ -321,7 +341,7 @@ class RevokedToken(SQLModel, table=True):
     expires_at: datetime
 
 
-class AuditLog(SQLModel, table=True):
+class AuditLog(UTCAwareModel, table=True):
     """系统审计日志(append-only)。
 
     用于记录敏感操作(危险区清空、删除资源等),便于追责与排错。
@@ -341,7 +361,7 @@ class AuditLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
-class Bookmark(SQLModel, table=True):
+class Bookmark(UTCAwareModel, table=True):
     """视频时间点书签。
 
     一个书签 = (media_item, 时间秒, 标题, [可选 note], [多个 tag])

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { settingsApi } from '@/api/settings'
+import { formatDateTime } from '@/utils/datetime'
 
 interface AuditRow {
   id: number
@@ -32,7 +33,7 @@ const fetchLogs = async () => {
   }
 }
 
-const formatTime = (s: string) => new Date(s).toLocaleString()
+const formatTime = formatDateTime
 
 const actionLabel = (a: string) => {
   const m: Record<string, string> = {

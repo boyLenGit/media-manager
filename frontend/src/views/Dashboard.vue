@@ -16,6 +16,7 @@ import {
 } from '@element-plus/icons-vue'
 import { statsApi, type DashboardStats, type RecentMediaItem } from '@/api/stats'
 import { scanApi, type ScanJob } from '@/api/scan'
+import { toDate } from '@/utils/datetime'
 
 const router = useRouter()
 const stats = ref<DashboardStats | null>(null)
@@ -59,7 +60,7 @@ const fileSize = (bytes: number) => {
 
 const formatTime = (s?: string) => {
   if (!s) return '-'
-  const date = new Date(s)
+  const date = toDate(s)
   const now = new Date()
   const diffMin = Math.floor((now.getTime() - date.getTime()) / 60000)
   if (diffMin < 1) return '刚刚'
