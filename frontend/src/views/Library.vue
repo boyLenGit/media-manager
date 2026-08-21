@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Grid, List as ListIcon, Star, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { Search, Refresh, Grid, List as ListIcon, Star, ZoomIn, ZoomOut, Plus } from '@element-plus/icons-vue'
 import { mediaApi, type MediaItemBrief, type MediaListParams } from '@/api/media'
 import { authorsApi, type Author } from '@/api/authors'
 import { mediaTypesApi, type MediaType } from '@/api/mediaTypes'
@@ -143,6 +143,60 @@ const openBatchDialog = () => {
   batchAddIds.value = []
   batchRemoveIds.value = []
   batchDlgOpen.value = true
+}
+
+// 批量设置作者弹窗
+const batchAuthorDlgOpen = ref(false)
+const batchAuthorId = ref<number | null>(null)
+const newBatchAuthorName = ref('')
+const creatingBatchAuthor = ref(false)
+
+const openBatchAuthorDialog = () => {
+  if (selectedIds.value.length === 0) {
+    ElMessage.warning('请先选择资源')
+    return
+  }
+  batchAuthorId.value = null
+  newBatchAuthorName.value = ''
+  batchAuthorDlgOpen.value = true
+}
+
+const createBatchAuthorInline = async () => {
+  const name = newBatchAuthorName.value.trim()
+  if (!name) return
+  creatingBatchAuthor.value = true
+  try {
+    const a = await authorsApi.create({ name })
+    authors.value.push({ ...a, media_count: 0 })
+    batchAuthorId.value = a.id
+    newBatchAuthorName.value = ''
+    ElMessage.success(`已创建作者「${a.name}」`)
+  } catch (e: any) {
+    if (e?.response?.data?.detail === 'author_name_taken') {
+      ElMessage.error('该作者已存在')
+    }
+  } finally {
+    creatingBatchAuthor.value = false
+  }
+}
+
+const submitBatchAuthor = async () => {
+  if (!batchAuthorId.value) {
+    ElMessage.warning('请选择或新建一个作者')
+    return
+  }
+  try {
+    const r = await mediaApi.batchUpdate({
+      media_ids: selectedIds.value,
+      author_id: batchAuthorId.value,
+    })
+    ElMessage.success(`已更新 ${r.affected} 个资源`)
+    batchAuthorDlgOpen.value = false
+    clearSelection()
+    await fetch()
+  } catch {
+    /* error toasted */
+  }
 }
 
 const submitBatch = async () => {
@@ -394,6 +448,7 @@ onMounted(async () => {
               <el-button size="small" @click="clearSelection">清除选择</el-button>
               <div class="spacer" />
               <el-button size="small" type="primary" @click="openBatchDialog">批量打标签</el-button>
+              <el-button size="small" type="primary" @click="openBatchAuthorDialog">批量设置作者</el-button>
               <el-dropdown trigger="click">
                 <el-button size="small">
                   改观看状态 <el-icon class="el-icon--right">▾</el-icon>
@@ -593,6 +648,55 @@ onMounted(async () => {
       <template #footer>
         <el-button @click="batchDlgOpen = false">取消</el-button>
         <el-button type="primary" @click="submitBatch">应用到 {{ selectedIds.length }} 个资源</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量设置作者弹窗 -->
+    <el-dialog v-model="batchAuthorDlgOpen" title="批量设置作者" width="500px">
+      <el-form label-width="60px">
+        <el-form-item label="作者">
+          <div class="inline-row">
+            <el-select
+              v-model="batchAuthorId"
+              placeholder="未指定"
+              clearable
+              filterable
+              class="grow"
+            >
+              <el-option
+                v-for="a in authors"
+                :key="a.id"
+                :label="a.alias ? `${a.name} (${a.alias})` : a.name"
+                :value="a.id"
+              />
+            </el-select>
+          </div>
+          <div class="inline-create">
+            <el-input
+              v-model="newBatchAuthorName"
+              placeholder="新建作者..."
+              size="small"
+              class="create-input"
+              @keyup.enter="createBatchAuthorInline"
+            />
+            <el-button
+              size="small"
+              :icon="Plus"
+              :loading="creatingBatchAuthor"
+              :disabled="!newBatchAuthorName.trim()"
+              @click="createBatchAuthorInline"
+            >
+              新建
+            </el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="batchAuthorDlgOpen = false">取消</el-button>
+        <el-button type="primary" @click="submitBatchAuthor">
+          应用到 {{ selectedIds.length }} 个资源
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -890,5 +994,22 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.inline-row {
+  display: flex;
+  width: 100%;
+}
+.grow {
+  flex: 1;
+}
+.inline-create {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.create-input {
+  flex: 1;
+  max-width: 240px;
 }
 </style>
