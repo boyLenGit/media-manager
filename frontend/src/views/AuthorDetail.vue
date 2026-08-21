@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Camera, Delete, Edit } from '@element-plus/icons-vue'
+import { ArrowLeft, Camera, Delete, Edit, Star } from '@element-plus/icons-vue'
 import { authorsApi, type Author } from '@/api/authors'
 import { mediaApi, type MediaItemBrief } from '@/api/media'
 import { useAuthStore } from '@/store/auth'
@@ -200,8 +200,33 @@ onMounted(async () => {
               <div class="w-cover">
                 <el-image v-if="m.cover_path" :src="m.cover_path" fit="cover" lazy />
                 <div v-else class="w-cover-placeholder">{{ m.title.slice(0, 1) }}</div>
+                <div class="w-overlay-badges">
+                  <el-tag v-if="m.favorite" type="warning" size="small" effect="dark">
+                    <el-icon><Star /></el-icon>
+                  </el-tag>
+                  <el-tag v-if="m.file_count > 1" type="info" size="small" effect="dark">
+                    ×{{ m.file_count }}
+                  </el-tag>
+                </div>
               </div>
-              <div class="w-title" :title="m.title">{{ m.title }}</div>
+              <div class="w-meta">
+                <div class="w-title" :title="m.title">{{ m.title }}</div>
+                <div class="w-sub">
+                  <span v-if="m.release_date">{{ m.release_date }}</span>
+                  <span v-if="m.media_type_name">· {{ m.media_type_name }}</span>
+                </div>
+                <div v-if="m.tags.length" class="w-tags">
+                  <el-tag
+                    v-for="t in m.tags"
+                    :key="t.id"
+                    size="small"
+                    :color="t.color"
+                    effect="light"
+                  >
+                    {{ t.name }}
+                  </el-tag>
+                </div>
+              </div>
             </div>
           </el-col>
         </el-row>
@@ -310,8 +335,13 @@ onMounted(async () => {
 .work-card {
   cursor: pointer;
   margin-bottom: 12px;
+  transition: transform 0.15s;
+}
+.work-card:hover {
+  transform: translateY(-2px);
 }
 .w-cover {
+  position: relative;
   aspect-ratio: 16/9;
   border-radius: 6px;
   overflow: hidden;
@@ -332,12 +362,34 @@ onMounted(async () => {
   color: #9ca3af;
   background: linear-gradient(135deg, #e5e7eb, #f3f4f6);
 }
-.w-title {
+.w-overlay-badges {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.w-meta {
   margin-top: 6px;
-  font-size: 12px;
+}
+.w-title {
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.w-sub {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+.w-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
 }
 .more-hint {
   margin-top: 12px;
