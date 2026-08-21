@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Grid, List as ListIcon, Star, ZoomIn, ZoomOut, Plus } from '@element-plus/icons-vue'
@@ -16,6 +16,8 @@ const router = useRouter()
 const items = ref<MediaItemBrief[]>([])
 const total = ref(0)
 const loading = ref(false)
+// 是否已完成首次挂载;用于避免 onActivated 在首次挂载时和 onMounted 重复请求
+let mounted = false
 
 const authors = ref<Author[]>([])
 const mediaTypes = ref<MediaType[]>([])
@@ -317,6 +319,14 @@ watch(
 
 onMounted(async () => {
   await Promise.all([fetch(), loadOptions()])
+  mounted = true
+})
+
+// 页面被 KeepAlive 缓存后再次进入(比如从详情页返回)时触发,
+// 不重置 filters/offset,只重新拉一次当前页数据(保留分页位置,同时刷新可能变化的数据,如收藏/观看状态)。
+// onActivated 在首次挂载时也会触发一次,用 mounted 标志跳过,避免和 onMounted 重复请求。
+onActivated(() => {
+  if (mounted) fetch()
 })
 </script>
 

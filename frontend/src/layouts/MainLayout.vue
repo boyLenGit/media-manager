@@ -253,7 +253,12 @@ onMounted(async () => {
       </el-header>
 
       <el-main class="layout-main">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <!-- 资源库页缓存:从详情页返回时保留筛选条件/分页/滚动位置,不重置到第一页 -->
+          <KeepAlive include="Library">
+            <component :is="Component" />
+          </KeepAlive>
+        </RouterView>
       </el-main>
     </el-container>
 
