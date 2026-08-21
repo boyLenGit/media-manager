@@ -150,6 +150,7 @@ def list_media(
     favorite: bool | None = None,
     watch_status: str | None = None,
     tag_id: int | None = None,
+    scan_path_id: int | None = None,
     sort_by: str = Query(default="updated_at", pattern="^(updated_at|created_at|title|rating)$"),
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
     limit: int = Query(default=50, le=200),
@@ -170,6 +171,13 @@ def list_media(
     if tag_id is not None:
         stmt = stmt.join(MediaTag, MediaTag.media_item_id == MediaItem.id).where(  # type: ignore[arg-type]
             MediaTag.tag_id == tag_id
+        )
+    if scan_path_id is not None:
+        stmt = (
+            stmt.join(MediaFile, MediaFile.media_item_id == MediaItem.id)  # type: ignore[arg-type]
+            .join(FileAsset, FileAsset.id == MediaFile.file_asset_id)  # type: ignore[arg-type]
+            .where(FileAsset.scan_path_id == scan_path_id)
+            .distinct()
         )
 
     # 排序

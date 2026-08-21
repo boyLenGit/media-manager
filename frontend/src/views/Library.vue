@@ -7,6 +7,7 @@ import { mediaApi, type MediaItemBrief, type MediaListParams } from '@/api/media
 import { authorsApi, type Author } from '@/api/authors'
 import { mediaTypesApi, type MediaType } from '@/api/mediaTypes'
 import { tagsApi, type Tag } from '@/api/tags'
+import { scanApi, type ScanPath } from '@/api/scan'
 import { useAuthStore } from '@/store/auth'
 
 const auth = useAuthStore()
@@ -19,6 +20,7 @@ const loading = ref(false)
 const authors = ref<Author[]>([])
 const mediaTypes = ref<MediaType[]>([])
 const tags = ref<Tag[]>([])
+const scanPaths = ref<ScanPath[]>([])
 
 const filters = reactive<MediaListParams>({
   q: '',
@@ -27,6 +29,7 @@ const filters = reactive<MediaListParams>({
   favorite: undefined,
   watch_status: undefined,
   tag_id: undefined,
+  scan_path_id: undefined,
   sort_by: 'updated_at',
   order: 'desc',
   limit: 24,
@@ -105,10 +108,16 @@ const fetch = async () => {
 }
 
 const loadOptions = async () => {
-  const [a, t, tg] = await Promise.all([authorsApi.list(), mediaTypesApi.list(), tagsApi.list()])
+  const [a, t, tg, sp] = await Promise.all([
+    authorsApi.list(),
+    mediaTypesApi.list(),
+    tagsApi.list(),
+    scanApi.listPaths(),
+  ])
   authors.value = a
   mediaTypes.value = t
   tags.value = tg
+  scanPaths.value = sp
 }
 
 const openDetail = (id: number) => router.push(`/media/${id}`)
@@ -130,6 +139,7 @@ const resetFilters = () => {
     favorite: undefined,
     watch_status: undefined,
     tag_id: undefined,
+    scan_path_id: undefined,
     offset: 0,
   })
   fetch()
@@ -357,6 +367,25 @@ onMounted(async () => {
                 :key="a.id"
                 :label="`${a.name} (${a.media_count})`"
                 :value="a.id"
+              />
+            </el-select>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-label">扫描路径</div>
+            <el-select
+              v-model="filters.scan_path_id"
+              placeholder="全部"
+              clearable
+              filterable
+              style="width: 100%"
+              @change="fetch"
+            >
+              <el-option
+                v-for="sp in scanPaths"
+                :key="sp.id"
+                :label="sp.name || sp.path"
+                :value="sp.id"
               />
             </el-select>
           </div>

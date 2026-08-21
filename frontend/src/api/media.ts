@@ -74,6 +74,7 @@ export interface MediaListParams {
   favorite?: boolean
   watch_status?: string
   tag_id?: number
+  scan_path_id?: number
   sort_by?: 'updated_at' | 'created_at' | 'title' | 'rating'
   order?: 'asc' | 'desc'
   limit?: number
