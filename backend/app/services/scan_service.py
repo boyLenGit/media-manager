@@ -169,18 +169,24 @@ def _ensure_media_item_for_video(session: Session, asset: FileAsset, scan_path: 
 
 
 # ============================================================
-# 扫描任务执行(异步,但内部 SQLite 操作是同步的)
+# 扫描任务执行(异步编排,但每个阶段内部的同步重活扔进线程池执行)
 # ============================================================
-async def run_scan_job(scan_path_id: int) -> None:
-    """执行一次扫描任务,创建 ScanJob 并跑完。"""
+def _run_phase_1_to_4(scan_path_id: int) -> tuple[int, int, int, int] | None:
+    """Phase 1-4:建 job、列文件、逐文件入库、标记失踪文件。全程同步(os.walk/
+    stat/partial_hash/SQLite 写),必须在线程池里跑,不能占用主事件循环 —— 否则
+    这几十秒(甚至更久,取决于文件数量)期间,整个应用对外所有 HTTP 请求都会被
+    阻塞,表现为"资源库一直转圈打不开"。
+
+    返回 (job_id, new_count, updated_count, missing_count),失败(路径不存在)
+    时返回 None。
+    """
     # Phase 1: 准备 - 创建 job, 记录路径配置
     with Session(engine) as session:
         scan_path = session.get(ScanPath, scan_path_id)
         if not scan_path:
             logger.error("scan_path_id=%s not found", scan_path_id)
-            return
+            return None
 
-        # 提取需要的字段值,避免 detached 后访问
         sp_path = scan_path.path
         sp_recursive = scan_path.recursive
 
@@ -201,7 +207,7 @@ async def run_scan_job(scan_path_id: int) -> None:
             session.add(j)
             _log(session, job_id, f"path not exists: {root}", level="error")
             session.commit()
-        return
+        return None
 
     # Phase 2: 列文件
     files: list[Path] = []
@@ -253,25 +259,28 @@ async def run_scan_job(scan_path_id: int) -> None:
                 session.commit()
 
     # Phase 4: 标记失踪文件
+    missing_count = 0
     with Session(engine) as session:
         all_assets = session.exec(
             select(FileAsset).where(FileAsset.scan_path_id == scan_path_id)
         ).all()
         existing_paths = {str(p.resolve()) for p in files}
-        missing = 0
         for a in all_assets:
             if a.path not in existing_paths and not a.missing:
                 a.missing = True
                 a.scan_status = "missing"
                 session.add(a)
-                missing += 1
-        if missing:
-            _log(session, job_id, f"marked {missing} files as missing")
+                missing_count += 1
+        if missing_count:
+            _log(session, job_id, f"marked {missing_count} files as missing")
         session.commit()
 
-    # Phase 5: ffprobe 探测 + 缩略图生成
-    # 收集所有视频文件,只要缺探测数据 / 缺缩略图都重做一次
-    enrich_targets: list[tuple[int, str, int | None]] = []  # (asset_id, path, media_id)
+    return job_id, new_count, updated_count, missing_count
+
+
+def _collect_enrich_targets(scan_path_id: int) -> list[tuple[int, str, int | None]]:
+    """收集需要 ffprobe 探测/生成缩略图的目标(纯 DB 查询,较快,可以留在主协程,
+    但为了统一风格和避免任何同步 DB 调用占用事件循环,也扔进线程池)。"""
     with Session(engine) as session:
         rows = session.exec(
             select(FileAsset, MediaFile)
@@ -282,112 +291,36 @@ async def run_scan_job(scan_path_id: int) -> None:
                 FileAsset.missing == False,  # noqa: E712
             )
         ).all()
-        thumbnail_dir = thumbnail_service.get_thumbnail_dir()  # 触发目录创建
+        thumbnail_service.get_thumbnail_dir()  # 触发目录创建
+        targets: list[tuple[int, str, int | None]] = []
         for fa, mf in rows:
             mid = mf.media_item_id if mf else None
             need_probe = not fa.media_probe_json
-            need_thumb = (
-                mid is not None
-                and not thumbnail_service.has_thumbnail(mid)
-            )
+            need_thumb = mid is not None and not thumbnail_service.has_thumbnail(mid)
             if need_probe or need_thumb:
-                enrich_targets.append((fa.id, fa.path, mid))  # type: ignore[arg-type]
+                targets.append((fa.id, fa.path, mid))  # type: ignore[arg-type]
+        return targets
 
-    # 进入"后处理"阶段:更新 status=enriching, enrich_total
-    with Session(engine) as session:
-        j = session.get(ScanJob, job_id)
-        if j is not None:
-            j.status = "enriching"
-            j.phase = "enriching"
-            j.enrich_total = len(enrich_targets)
-            j.enrich_done = 0
-            session.add(j)
-            session.commit()
 
-    if enrich_targets and (
-        ffprobe_service.is_available() or ffprobe_service.is_ffmpeg_available()
-    ):
-        sem = asyncio.Semaphore(2)  # ffmpeg 比较吃 CPU,降并发到 2
-
-        # 并发安全的 done 计数
-        done_lock = asyncio.Lock()
-        done_counter = {"n": 0}
-
-        async def _bump_done() -> None:
-            async with done_lock:
-                done_counter["n"] += 1
-                n = done_counter["n"]
-            # 每完成 1 个就刷一次进度(数量不会太多,几十~几百级别,可接受)
-            with Session(engine) as session:
-                jj = session.get(ScanJob, job_id)
-                if jj is not None:
-                    jj.enrich_done = n
-                    session.add(jj)
-                    session.commit()
-
-        async def _enrich_one(asset_id: int, p: str, media_id: int | None) -> None:
-            async with sem:
-                try:
-                    # 1. 探测
-                    result = None
-                    if ffprobe_service.is_available():
-                        result = await ffprobe_service.probe(p)
-
-                    if result:
-                        with Session(engine) as session:
-                            asset = session.get(FileAsset, asset_id)
-                            if asset:
-                                asset.media_probe_json = result.raw_json
-                                session.add(asset)
-                            mf = session.exec(
-                                select(MediaFile).where(MediaFile.file_asset_id == asset_id)
-                            ).first()
-                            if mf:
-                                mf.duration_seconds = result.duration_seconds
-                                mf.width = result.width
-                                mf.height = result.height
-                                mf.video_codec = result.video_codec
-                                mf.audio_codec = result.audio_codec
-                                if not mf.container and result.container:
-                                    mf.container = result.container
-                                session.add(mf)
-                            session.commit()
-
-                    # 2. 缩略图
-                    if (
-                        media_id is not None
-                        and ffprobe_service.is_ffmpeg_available()
-                        and not thumbnail_service.has_thumbnail(media_id)
-                    ):
-                        duration = result.duration_seconds if result else None
-                        # 从视频 10% 处取(避免黑场片头),最低 1 秒
-                        seek = max(1.0, (duration or 60.0) * 0.1)
-                        out_path = thumbnail_service.get_thumbnail_path(media_id)
-                        ok = await ffprobe_service.generate_thumbnail(
-                            p, out_path, seek_seconds=seek
-                        )
-                        if ok:
-                            # 写 cover_path
-                            with Session(engine) as session:
-                                mi = session.get(MediaItem, media_id)
-                                if mi and not mi.cover_path:
-                                    mi.cover_path = thumbnail_service.get_thumbnail_url(media_id)
-                                    session.add(mi)
-                                    session.commit()
-                finally:
-                    # 不论成败都计入 done,避免卡进度
-                    await _bump_done()
-
-        await asyncio.gather(*(_enrich_one(*t) for t in enrich_targets))
-
+def _run_phase_6_to_9(
+    scan_path_id: int,
+    job_id: int,
+    new_count: int,
+    updated_count: int,
+    missing_count: int,
+) -> None:
+    """Phase 6-9:中段收尾、FTS 索引全量同步、重复检测(CPU 密集的 Levenshtein
+    相似度两两比较)、最终收尾。同样全程同步,必须扔进线程池,原因同上 —— dedup
+    阶段尤其耗时,在库较大时可能持续数秒到数十秒,绝不能占用主事件循环。
+    """
     # Phase 6: 中段更新 (scan + enrich 已完成,但还有 FTS 和 dedup)
     with Session(engine) as session:
         j = session.get(ScanJob, job_id)
         if j is not None:
-            j.scanned_files = len(files)  # type: ignore[union-attr]
+            j.scanned_files = j.total_files  # type: ignore[union-attr]
             j.new_files = new_count  # type: ignore[union-attr]
             j.updated_files = updated_count  # type: ignore[union-attr]
-            j.missing_files = missing if "missing" in locals() else 0  # type: ignore[union-attr]
+            j.missing_files = missing_count  # type: ignore[union-attr]
             if j.enrich_done < j.enrich_total:  # type: ignore[union-attr]
                 j.enrich_done = j.enrich_total  # type: ignore[union-attr]
             session.add(j)
@@ -482,4 +415,115 @@ async def run_scan_job(scan_path_id: int) -> None:
         new_count,
         updated_count,
         groups_count if not skip_dedup else -1,
+    )
+
+
+async def run_scan_job(scan_path_id: int) -> None:
+    """执行一次扫描任务,创建 ScanJob 并跑完。
+
+    三段编排:
+    1. Phase 1-4(同步,os.walk/stat/hash/SQLite 写)—— asyncio.to_thread 扔进
+       线程池,避免占用主事件循环导致扫描期间其他 HTTP 请求(包括打开资源库)
+       全部被阻塞排队
+    2. Phase 5(真正的异步 IO:ffprobe/ffmpeg 子进程调用)—— 保留在主协程 await
+    3. Phase 6-9(同步,FTS 全量同步 + dedup 的 CPU 密集相似度计算)—— 同样扔
+       进线程池
+    """
+    phase_result = await asyncio.to_thread(_run_phase_1_to_4, scan_path_id)
+    if phase_result is None:
+        return
+    job_id, new_count, updated_count, missing_count = phase_result
+
+    # Phase 5: ffprobe 探测 + 缩略图生成
+    enrich_targets = await asyncio.to_thread(_collect_enrich_targets, scan_path_id)
+
+    # 进入"后处理"阶段:更新 status=enriching, enrich_total
+    with Session(engine) as session:
+        j = session.get(ScanJob, job_id)
+        if j is not None:
+            j.status = "enriching"
+            j.phase = "enriching"
+            j.enrich_total = len(enrich_targets)
+            j.enrich_done = 0
+            session.add(j)
+            session.commit()
+
+    if enrich_targets and (
+        ffprobe_service.is_available() or ffprobe_service.is_ffmpeg_available()
+    ):
+        sem = asyncio.Semaphore(2)  # ffmpeg 比较吃 CPU,降并发到 2
+
+        # 并发安全的 done 计数
+        done_lock = asyncio.Lock()
+        done_counter = {"n": 0}
+
+        async def _bump_done() -> None:
+            async with done_lock:
+                done_counter["n"] += 1
+                n = done_counter["n"]
+            # 每完成 1 个就刷一次进度(数量不会太多,几十~几百级别,可接受)
+            with Session(engine) as session:
+                jj = session.get(ScanJob, job_id)
+                if jj is not None:
+                    jj.enrich_done = n
+                    session.add(jj)
+                    session.commit()
+
+        async def _enrich_one(asset_id: int, p: str, media_id: int | None) -> None:
+            async with sem:
+                try:
+                    # 1. 探测
+                    result = None
+                    if ffprobe_service.is_available():
+                        result = await ffprobe_service.probe(p)
+
+                    if result:
+                        with Session(engine) as session:
+                            asset = session.get(FileAsset, asset_id)
+                            if asset:
+                                asset.media_probe_json = result.raw_json
+                                session.add(asset)
+                            mf = session.exec(
+                                select(MediaFile).where(MediaFile.file_asset_id == asset_id)
+                            ).first()
+                            if mf:
+                                mf.duration_seconds = result.duration_seconds
+                                mf.width = result.width
+                                mf.height = result.height
+                                mf.video_codec = result.video_codec
+                                mf.audio_codec = result.audio_codec
+                                if not mf.container and result.container:
+                                    mf.container = result.container
+                                session.add(mf)
+                            session.commit()
+
+                    # 2. 缩略图
+                    if (
+                        media_id is not None
+                        and ffprobe_service.is_ffmpeg_available()
+                        and not thumbnail_service.has_thumbnail(media_id)
+                    ):
+                        duration = result.duration_seconds if result else None
+                        # 从视频 10% 处取(避免黑场片头),最低 1 秒
+                        seek = max(1.0, (duration or 60.0) * 0.1)
+                        out_path = thumbnail_service.get_thumbnail_path(media_id)
+                        ok = await ffprobe_service.generate_thumbnail(
+                            p, out_path, seek_seconds=seek
+                        )
+                        if ok:
+                            # 写 cover_path
+                            with Session(engine) as session:
+                                mi = session.get(MediaItem, media_id)
+                                if mi and not mi.cover_path:
+                                    mi.cover_path = thumbnail_service.get_thumbnail_url(media_id)
+                                    session.add(mi)
+                                    session.commit()
+                finally:
+                    # 不论成败都计入 done,避免卡进度
+                    await _bump_done()
+
+        await asyncio.gather(*(_enrich_one(*t) for t in enrich_targets))
+
+    await asyncio.to_thread(
+        _run_phase_6_to_9, scan_path_id, job_id, new_count, updated_count, missing_count
     )
