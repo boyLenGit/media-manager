@@ -309,11 +309,16 @@ const batchDelete = async () => {
   await fetch()
 }
 
+// 搜索框加 300ms 防抖,避免逐字符触发请求(尤其在中文输入法组词过程中会连续触发多次)
+let searchDebounceTimer: number | null = null
 watch(
   () => filters.q,
   () => {
-    filters.offset = 0
-    fetch()
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = window.setTimeout(() => {
+      filters.offset = 0
+      fetch()
+    }, 300)
   },
 )
 
@@ -447,7 +452,7 @@ onActivated(() => {
         <div class="toolbar">
           <el-input
             v-model="filters.q"
-            placeholder="搜索资源标题"
+            placeholder="搜索标题/文件名/作者/标签"
             clearable
             :prefix-icon="Search"
             style="width: 280px"

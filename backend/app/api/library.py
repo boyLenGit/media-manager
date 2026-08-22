@@ -147,7 +147,7 @@ def _build_brief(
 # ============================================================
 @router.get("")
 def list_media(
-    q: str | None = Query(default=None, description="标题模糊搜索"),
+    q: str | None = Query(default=None, description="标题/文件名/作者/标签全文搜索"),
     media_type_id: int | None = None,
     author_id: int | None = None,
     favorite: bool | None = None,
@@ -162,7 +162,14 @@ def list_media(
 ) -> dict:
     stmt = select(MediaItem)
     if q:
-        stmt = stmt.where(MediaItem.title.contains(q))  # type: ignore[union-attr]
+        # 走 FTS5 全文索引(标题/原始文件名/归一化标题/作者名/标签/描述/文件名/路径),
+        # 而不是只匹配 MediaItem.title 的简单 LIKE —— 后者搜不到"标题被解析成英文,
+        # 但原始文件名/标签里有中文关键词"这类常见场景。
+        matched_ids = search_service.search_media_ids(session, q)
+        if not matched_ids:
+            # FTS5 无命中,直接返回空列表(避免继续走后面复杂的 join 查询)
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+        stmt = stmt.where(MediaItem.id.in_(matched_ids))  # type: ignore[union-attr]
     if media_type_id is not None:
         stmt = stmt.where(MediaItem.media_type_id == media_type_id)
     if author_id is not None:

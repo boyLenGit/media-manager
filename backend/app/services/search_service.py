@@ -100,3 +100,37 @@ def rebuild_all(session: Session) -> int:
     for mid in media_ids:
         sync_one(session, mid)
     return len(media_ids)
+
+
+def search_media_ids(session: Session, q: str, limit: int = 500) -> list[int]:
+    """走 FTS5 索引搜索,返回匹配的 media_item_id 列表(按相关度排序)。
+
+    覆盖字段:title / original_title(原始文件名) / normalized_title /
+    author_name / tag_names / description / filenames / paths。
+
+    与 /api/search/local 用的是同一套查询逻辑 —— 之前资源库列表接口(list_media)
+    只用 MediaItem.title 做简单 LIKE 匹配,搜不到"标题被清洗成英文,但原始文件名/
+    标签里有中文关键词"这类常见场景;这里统一改用 FTS5,覆盖面更全。
+    """
+    q = q.strip()
+    if not q:
+        return []
+    safe_q = q.replace('"', '""')
+    fts_query = f'"{safe_q}"*'  # 前缀匹配
+    sql = text(
+        """
+        SELECT media_item_id
+        FROM media_search_fts
+        WHERE media_search_fts MATCH :q
+        ORDER BY rank
+        LIMIT :limit
+        """
+    )
+    try:
+        rows = session.exec(sql.bindparams(q=fts_query, limit=limit)).all()
+    except Exception:  # noqa: BLE001
+        # FTS5 query 语法错误(比如用户输入了裸露的特殊符号)时不让整个接口 500,
+        # 退化为空结果,前端表现为"没搜到"而不是报错。
+        logger.warning("FTS5 query failed for q=%r", q, exc_info=True)
+        return []
+    return [r[0] for r in rows]
