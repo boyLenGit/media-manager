@@ -225,6 +225,19 @@ def _build_url(
                 pass
         return f"{scheme}://play?path={fa.path}"
 
+    if t.target_type == "iina_weblink":
+        # IINA(macOS 开源播放器)官方自行注册了 iina://weblink?url=<url> 协议
+        # (源码见 IINA 仓库 OpenInIINA/SafariExtensionHandler.swift 的
+        # launchIINA()),不需要我们额外开发任何"协议助手"程序,只要用户装了
+        # IINA,浏览器跳转这个链接就会自动唤起 IINA 直接播放。
+        #
+        # 这里只返回不带域名的相对 stream 路径(和 external_url 一致),
+        # 真正拼接完整 URL + 包装成 iina://weblink 的逻辑放在前端做
+        # (前端用 window.location.origin 拼域名,不需要后端猜测/配置一个
+        # "外部可访问地址" —— 局域网部署场景下内网IP/外网IP/域名可能不一致,
+        # 交给浏览器自己判断当前访问地址更可靠)。
+        return f"/api/files/{fa.id}/stream"
+
     return None
 
 

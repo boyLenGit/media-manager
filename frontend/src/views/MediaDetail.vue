@@ -14,6 +14,7 @@ import {
   CopyDocument,
   FolderOpened,
   Delete,
+  Promotion,
 } from '@element-plus/icons-vue'
 import { mediaApi, type MediaItemDetail } from '@/api/media'
 import {
@@ -237,6 +238,24 @@ const handleLocalOption = async (opt: PlaybackOption, fileId?: number) => {
       window.location.href = opt.url
       break
 
+    case 'iina_weblink': {
+      // IINA 官方自行注册了 iina://weblink?url=<url> 协议(不需要额外安装
+      // 任何"协议助手",只要用户装了 IINA 即可),跳转这个链接会自动唤起
+      // IINA 直接播放,不需要用户手动复制粘贴。
+      const targetFid = fileId ?? primaryFile.value?.file_asset_id
+      if (!targetFid) return
+      try {
+        const t = await filesApi.streamToken(targetFid)
+        const fullUrl = `${window.location.origin}${t.url}`
+        const iinaUrl = `iina://weblink?url=${encodeURIComponent(fullUrl)}`
+        window.location.href = iinaUrl
+        ElMessage.info('正在唤起 IINA…如果没反应,请确认已安装 IINA')
+      } catch {
+        ElMessage.error('生成播放链接失败')
+      }
+      break
+    }
+
     default:
       ElMessage.info(`目标 ${opt.type}:${opt.url}`)
   }
@@ -250,6 +269,7 @@ const optionIcon = (type: string) => {
       smb_path: CopyDocument,
       reveal_dir: FolderOpened,
       custom_protocol: VideoPlay,
+      iina_weblink: Promotion,
     } as Record<string, any>
   )[type] || Link
 }

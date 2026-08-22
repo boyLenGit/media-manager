@@ -44,6 +44,7 @@ const targetTypeLabel = (type: string) => {
       smb_path: 'SMB 路径',
       reveal_dir: '复制目录',
       custom_protocol: '自定义协议',
+      iina_weblink: 'IINA 一键唤起',
     } as Record<string, string>
   )[type] || type
 }
@@ -57,6 +58,7 @@ const targetHint = (type: string) => {
       smb_path: '需在「SMB 配置」中设置 NAS 主机和共享映射',
       reveal_dir: '复制视频文件所在目录,方便手动打开',
       custom_protocol: '需要本地安装协议助手程序(MVP 不支持)',
+      iina_weblink: '仅 macOS 装了 IINA 才有效,点击后自动唤起 IINA 直接播放,无需复制粘贴',
     } as Record<string, string>
   )[type] || ''
 }
