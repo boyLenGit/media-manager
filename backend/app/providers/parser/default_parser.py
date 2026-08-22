@@ -110,7 +110,14 @@ LANG_PATTERNS = [
 
 YEAR_PATTERN = re.compile(r"(?<![0-9])(19\d{2}|20\d{2})(?![0-9])")
 SEASON_EPISODE_PATTERN = re.compile(r"\b[Ss](\d{1,2})[Ee](\d{1,3})\b")
-RELEASE_GROUP_PATTERN = re.compile(r"-([A-Za-z0-9]{2,12})$")
+# 发布组名称要求以字母开头(真实发布组几乎都是字母/字母数字混合,如 GROUP/RARBG/VCB-Studio)。
+# 之前是 [A-Za-z0-9]{2,12},纯数字也能匹配,导致 "FC2-PPV-3180681" 这类"前缀-类别-编号"
+# 命名(常见于 FC2/PPV 等番号资源)被误判成"末尾是发布组名"反复剥离:
+#   FC2-PPV-3180681 → 剥掉 "-3180681" → FC2-PPV → 剥掉 "-PPV" → FC2
+# 结果大量本应独立的资源全部被清洗成同一个空壳标题 "FC2",又因为 normalized_title
+# 完全相同,被 scan_service._ensure_media_item_for_video 的"标题去重"逻辑误判为
+# 同一部作品的不同文件版本,合并成一个关联了上百个毫不相关文件的巨型资源。
+RELEASE_GROUP_PATTERN = re.compile(r"-([A-Za-z][A-Za-z0-9]{1,11})$")
 
 
 def _strip_brackets(s: str) -> str:
