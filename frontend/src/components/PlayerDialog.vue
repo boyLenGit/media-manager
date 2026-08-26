@@ -327,6 +327,15 @@ const setupPlayer = async () => {
     player.on('video:ended', () => reportProgress(true))
     player.on('pause', () => reportProgress(false))
 
+    // 播放失败兜底(比如 HEVC 在当前浏览器/系统上实际解码失败):
+    // 之前完全没有这个监听,失败时用户只能看到黑屏卡死,没有任何提示。
+    player.on('video:error', (err: Error) => {
+      console.error('[PlayerDialog] video error:', err)
+      errorMsg.value =
+        '该视频在当前浏览器无法解码播放(可能是编码不兼容),请关闭此弹窗后使用「本地播放」中的' +
+        '「复制播放链接」或「用 IINA 打开」等方式在本地播放器中打开。'
+    })
+
     progressTimer = window.setInterval(() => {
       if (player && player.video && !player.video.paused) {
         reportProgress(false)

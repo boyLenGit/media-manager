@@ -21,6 +21,8 @@ export interface PlaybackFileEntry {
   width?: number
   height?: number
   web_playable: boolean
+  /** true = 该编码(如 HEVC)是否可播取决于用户浏览器/系统,建议先尝试播放 */
+  web_playable_uncertain?: boolean
   web_unplayable_reason?: string | null
   options: PlaybackOption[]
 }

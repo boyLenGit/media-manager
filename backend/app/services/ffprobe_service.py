@@ -211,7 +211,21 @@ WEB_PLAYABLE_VIDEO_CODECS = {
     "vp9",
     "av1",
     "av01",
-    # hevc 标记为半支持,UA 嗅探不靠谱,统一当作不支持给用户引导本地播放
+    # hevc 不在此列 —— 它是否可播完全取决于用户浏览器/系统/是否装了解码
+    # 扩展,服务端无法确定,归到下面的 BROWSER_DEPENDENT 类别,交给浏览器
+    # 自己用 canPlayType 探测 + 播放失败时前端兜底提示。
+}
+
+# 浏览器"部分支持,取决于具体浏览器/系统"的编码:
+# - Safari(含 iOS/macOS):原生硬解支持
+# - Chrome/Edge(Windows):需要系统装了「HEVC 视频扩展」且硬件支持硬解才行,
+#   默认大概率没装,但不是不可能
+# - Firefox:基本不支持
+# 之前(commit a7f8c8c)统一当作不支持,理由是"UA 嗅探不靠谱";现在改为
+# "允许尝试播放 + 前端探测/失败兜底",而不是一刀切拒绝。
+BROWSER_DEPENDENT_VIDEO_CODECS = {
+    "hevc",
+    "h265",
 }
 
 # 浏览器原生支持的容器(扩展名层级,作为快速判断的第一层)
@@ -222,6 +236,13 @@ def is_codec_web_playable(codec: str | None) -> bool:
     if not codec:
         return False
     return codec.lower() in WEB_PLAYABLE_VIDEO_CODECS
+
+
+def is_codec_browser_dependent(codec: str | None) -> bool:
+    """编码是否属于"部分浏览器支持,无法在服务端确定"的类别(目前只有 HEVC)。"""
+    if not codec:
+        return False
+    return codec.lower() in BROWSER_DEPENDENT_VIDEO_CODECS
 
 
 def is_extension_potentially_playable(extension: str) -> bool:

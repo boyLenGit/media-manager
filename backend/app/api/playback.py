@@ -28,7 +28,7 @@ from app.models import (
     User,
 )
 from app.providers.player import factory as jellyfin_factory
-from app.services.ffprobe_service import is_codec_web_playable
+from app.services.ffprobe_service import is_codec_browser_dependent, is_codec_web_playable
 
 router = APIRouter()
 
@@ -124,14 +124,20 @@ def get_play_options(media_id: int, session: Session = Depends(get_session)) -> 
         # 编码层判断 (ffprobe 探测过才知道)
         codec_known = mf.video_codec is not None
         codec_ok = is_codec_web_playable(mf.video_codec) if codec_known else None
+        # HEVC 等"取决于用户浏览器/系统"的编码:不一刀切拒绝,交给前端用
+        # canPlayType 探测 + 播放失败兜底,由前端决定是否让用户尝试播放。
+        codec_uncertain = is_codec_browser_dependent(mf.video_codec) if codec_known else False
 
         # 综合判断:
         # - 没探测过 → 信任扩展名 (兼容老数据,但前端会显示"未知")
-        # - 探测过 → 容器和编码都对才行
+        # - 探测过且明确不支持 → 不可播
+        # - 探测过且是 browser-dependent(HEVC) → 标记为"不确定",前端自行探测尝试
+        # - 探测过且明确支持 → 可播
         if codec_known:
             web_ok = container_ok and bool(codec_ok)
         else:
             web_ok = container_ok
+        web_uncertain = container_ok and codec_uncertain and not web_ok
 
         # 不可播原因(给前端提示用)
         web_unplayable_reason = None
@@ -139,12 +145,20 @@ def get_play_options(media_id: int, session: Session = Depends(get_session)) -> 
             web_unplayable_reason = "文件失踪"
         elif not container_ok:
             web_unplayable_reason = f"容器 {fa.extension} 不被浏览器支持"
+        elif web_uncertain:
+            web_unplayable_reason = (
+                f"视频编码 {mf.video_codec} 是否可播取决于你的浏览器/系统,可以先尝试播放"
+            )
         elif codec_known and not codec_ok:
             web_unplayable_reason = f"视频编码 {mf.video_codec} 不被浏览器支持,请用本地播放器"
 
         opts: list[dict] = []
         for t in targets:
-            url = _build_url(t, fa, media, settings, smb_host, smb_share_map, web_ok, jellyfin_url)
+            # HEVC 等"不确定"编码也生成 web 播放的 URL,交给前端尝试播放 +
+            # 失败兜底,而不是直接不生成选项。
+            url = _build_url(
+                t, fa, media, settings, smb_host, smb_share_map, web_ok or web_uncertain, jellyfin_url
+            )
             if url is None:
                 continue
             opts.append(
@@ -171,6 +185,7 @@ def get_play_options(media_id: int, session: Session = Depends(get_session)) -> 
                 "width": mf.width,
                 "height": mf.height,
                 "web_playable": web_ok,
+                "web_playable_uncertain": web_uncertain,
                 "web_unplayable_reason": web_unplayable_reason,
                 "options": opts,
             }

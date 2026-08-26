@@ -73,6 +73,18 @@ const primaryWebPlayable = computed(() => {
   return entry?.web_playable || false
 })
 
+// 主文件是否"不确定能不能播"(如 HEVC,取决于浏览器/系统),允许用户尝试
+const primaryWebUncertain = computed(() => {
+  if (!primaryFile.value || !playOpts.value) return false
+  const entry = playOpts.value.files.find(
+    (f) => f.file_asset_id === primaryFile.value!.file_asset_id,
+  )
+  return entry?.web_playable_uncertain || false
+})
+
+// 主按钮是否可点击:明确可播 或 不确定(允许尝试)
+const primaryCanAttemptWeb = computed(() => primaryWebPlayable.value || primaryWebUncertain.value)
+
 // 主文件不可网播的原因(后端给出的精确说明)
 const primaryUnplayableReason = computed(() => {
   if (!primaryFile.value || !playOpts.value) return null
@@ -155,25 +167,31 @@ const playFromBookmark = (b: Bookmark) => {
   const fid = b.file_asset_id || primaryFile.value.file_asset_id
   const target =
     media.value?.files.find((f) => f.file_asset_id === fid) || primaryFile.value
-  // 检查可网播
+  // 检查可网播(明确可播 或 不确定可播都允许尝试)
   const entry = playOpts.value?.files.find((f) => f.file_asset_id === fid)
-  if (!entry?.web_playable) {
+  if (!entry?.web_playable && !entry?.web_playable_uncertain) {
     ElMessage.warning(
       entry?.web_unplayable_reason ||
         '该文件无法在浏览器直放,请用「本地播放」复制链接到 IINA / VLC',
     )
     return
   }
+  if (entry.web_playable_uncertain) {
+    ElMessage.info(entry.web_unplayable_reason || '正在尝试播放,若失败请改用「本地播放」')
+  }
   openWebPlayer(fid, target.filename, target.duration_seconds, b.position_seconds)
 }
 
 const playPrimary = () => {
   if (!primaryFile.value) return
-  if (!primaryWebPlayable.value) {
+  if (!primaryCanAttemptWeb.value) {
     ElMessage.warning(
       primaryUnplayableReason.value || '该文件无法在浏览器直放,请使用「本地播放」',
     )
     return
+  }
+  if (primaryWebUncertain.value) {
+    ElMessage.info(primaryUnplayableReason.value || '正在尝试播放,若失败请改用「本地播放」')
   }
   openWebPlayer(
     primaryFile.value.file_asset_id,
@@ -184,11 +202,14 @@ const playPrimary = () => {
 
 const playFile = (fileId: number, filename: string, duration?: number) => {
   const entry = playOpts.value?.files.find((f) => f.file_asset_id === fileId)
-  if (!entry?.web_playable) {
+  if (!entry?.web_playable && !entry?.web_playable_uncertain) {
     ElMessage.warning(
       entry?.web_unplayable_reason || '该文件无法在浏览器直放,请使用「本地播放」',
     )
     return
+  }
+  if (entry.web_playable_uncertain) {
+    ElMessage.info(entry.web_unplayable_reason || '正在尝试播放,若失败请改用「本地播放」')
   }
   openWebPlayer(fileId, filename, duration)
 }
@@ -443,13 +464,15 @@ onMounted(fetch)
                 type="primary"
                 size="large"
                 :icon="VideoPlay"
-                :disabled="!primaryWebPlayable"
+                :disabled="!primaryCanAttemptWeb"
                 @click="playPrimary"
               >
                 {{
                   resume && resume.position_seconds > 5
                     ? `网页播放 · 续播 ${formatDuration(resume.position_seconds)}`
-                    : '网页播放'
+                    : primaryWebUncertain
+                      ? '网页播放(尝试)'
+                      : '网页播放'
                 }}
               </el-button>
 
@@ -525,16 +548,21 @@ onMounted(fetch)
               </el-button>
             </div>
 
-            <!-- 不可网页直放时的精确原因提示 -->
+            <!-- 不可网页直放 / 不确定能否网页直放 时的精确原因提示 -->
             <el-alert
               v-if="primaryFile && !primaryWebPlayable && primaryUnplayableReason"
-              type="warning"
+              :type="primaryWebUncertain ? 'info' : 'warning'"
               :closable="false"
               show-icon
               class="reason-alert"
             >
               <template #title>
-                {{ primaryUnplayableReason }} — 请用「本地播放」复制链接到 IINA / VLC / mpv 播放
+                {{ primaryUnplayableReason }}
+                {{
+                  primaryWebUncertain
+                    ? '(若播放失败,请改用「本地播放」)'
+                    : '— 请用「本地播放」复制链接到 IINA / VLC / mpv 播放'
+                }}
               </template>
             </el-alert>
 
@@ -684,7 +712,12 @@ onMounted(fetch)
                 size="small"
                 type="primary"
                 :icon="VideoPlay"
-                :disabled="!playOpts?.files.find((f) => f.file_asset_id === row.file_asset_id)?.web_playable"
+                :disabled="
+                  !playOpts?.files.find((f) => f.file_asset_id === row.file_asset_id)
+                    ?.web_playable &&
+                  !playOpts?.files.find((f) => f.file_asset_id === row.file_asset_id)
+                    ?.web_playable_uncertain
+                "
                 @click="playFile(row.file_asset_id, row.filename, row.duration_seconds)"
               >
                 播放
