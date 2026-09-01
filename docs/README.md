@@ -13,6 +13,7 @@
 - **[tutorials/synology-dsm71-deploy_cn.md](./tutorials/synology-dsm71-deploy_cn.md)** — **群晖 DSM 7.1 老 Docker 套件实战部署**(含 ghcr.io 拉取卡住、SSH SCP 协议、OCI manifest 兼容等坑的解决方案)
 - **[tutorials/synology-dsm71-update_cn.md](./tutorials/synology-dsm71-update_cn.md)** — **群晖 DSM 7.1 老 Docker 更新教程**(3 种更新方案 + 一键脚本 + 回滚 + FAQ)
 - **[tutorials/jackett-prowlarr_cn.md](./tutorials/jackett-prowlarr_cn.md)** — 配置 Jackett / Prowlarr 作为搜索源
+- **[tutorials/custom-parser-request_cn.md](./tutorials/custom-parser-request_cn.md)** — 内置解析器清洗不干净某批文件名时,提交"新增文件名解析器"需求的填写模板
 
 ## 🔧 工具脚本
 
