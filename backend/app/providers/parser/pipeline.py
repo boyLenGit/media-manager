@@ -15,6 +15,7 @@ from app.providers.parser.anime_parser import AnimeParser
 from app.providers.parser.base import FilenameParser, ParsedName
 from app.providers.parser.bilibili_parser import BilibiliParser
 from app.providers.parser.default_parser import DefaultParser
+from app.providers.parser.jpav_parser import JPAVParser
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,14 @@ logger = logging.getLogger(__name__)
 PARSERS: dict[str, type[FilenameParser]] = {
     "bilibili": BilibiliParser,
     "anime": AnimeParser,
+    "jpav": JPAVParser,
     "default": DefaultParser,
 }
 
-# 默认的 pipeline:特化 parser 在前,default 兜底
-DEFAULT_PIPELINE = ["bilibili", "anime", "default"]
+# 默认的 pipeline:特化 parser 在前,default 兜底。
+# jpav 放在 default 之前 —— 它只做"FC2-PPV 各种写法归一化",归一化后再交给
+# default 做通用清洗(剥分辨率/语言标记等),顺序反了就失去归一化的意义。
+DEFAULT_PIPELINE = ["bilibili", "anime", "jpav", "default"]
 
 
 def list_available() -> list[dict]:
