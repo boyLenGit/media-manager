@@ -13,10 +13,12 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Delete } from '@element-plus/icons-vue'
+import { Upload, Delete, Notebook } from '@element-plus/icons-vue'
 import { customSubtitlesApi, filesApi, type SubtitleInfo } from '@/api/files'
 import { playbackApi } from '@/api/playback'
+import { formatSeconds } from '@/utils/time'
 import BookmarkDrawer from './BookmarkDrawer.vue'
+import SubtitleListDrawer from './SubtitleListDrawer.vue'
 
 interface Props {
   modelValue: boolean
@@ -46,8 +48,14 @@ const uploadingSubtitle = ref(false)
 
 // 书签抽屉
 const bookmarkDrawerOpen = ref(false)
-// 当前播放时间(秒) — 用于打开抽屉时给"在当前位置添加"按钮提供初值
+// 当前播放时间(秒) — 用于打开抽屉时给"在当前位置添加"按钮提供初值,
+// 也用于字幕明细面板高亮"正在播放"的那一行
 const currentTime = ref(0)
+
+// 字幕明细抽屉:cues 来自 player.subtitle.cues(当前已加载字幕轨道的全部行)
+const subtitleListOpen = ref(false)
+const subtitleCues = ref<VTTCue[]>([])
+const activeSubtitleName = ref('')
 
 let player: Artplayer | null = null
 let hls: Hls | null = null
@@ -83,6 +91,30 @@ const openBookmarks = () => {
   bookmarkDrawerOpen.value = true
 }
 
+const openSubtitleList = () => {
+  if (player) {
+    currentTime.value = player.currentTime || 0
+    // 同书签抽屉:先退出全屏,避免抽屉在全屏元素之外不可见
+    try {
+      if (player.fullscreen) player.fullscreen = false
+      if (player.fullscreenWeb) player.fullscreenWeb = false
+    } catch {
+      /* ignore */
+    }
+    // 同步一次最新的 cues(防止 subtitleLoad 事件错过或字幕早于本次打开加载完成)
+    try {
+      subtitleCues.value = player.subtitle.cues || []
+    } catch {
+      subtitleCues.value = []
+    }
+  }
+  if (subtitleCues.value.length === 0) {
+    ElMessage.warning('当前字幕没有可展示的内容,或字幕尚未加载完成,请稍后再试')
+    return
+  }
+  subtitleListOpen.value = true
+}
+
 const cleanup = () => {
   if (progressTimer) {
     clearInterval(progressTimer)
@@ -110,6 +142,8 @@ const cleanup = () => {
   }
   lastReportedPosition = -1
   activeSubId.value = null
+  subtitleCues.value = []
+  activeSubtitleName.value = ''
 }
 
 const reportProgress = async (completed = false) => {
@@ -194,8 +228,8 @@ const setupPlayer = async () => {
       playsInline: true,
       airplay: true,
       theme: '#3b82f6',
-      // 自定义控件:在控件栏右侧加一个"书签"按钮
-      // 这样无论是否全屏都能打开书签抽屉
+      // 自定义控件:在控件栏右侧加"书签"和"字幕明细"按钮
+      // 这样无论是否全屏都能打开对应抽屉
       controls: [
         {
           name: 'bookmark',
@@ -209,6 +243,19 @@ const setupPlayer = async () => {
             </div>
           `,
           click: () => openBookmarks(),
+        },
+        {
+          name: 'subtitle-list',
+          position: 'right',
+          tooltip: '字幕明细',
+          html: `
+            <div style="display:flex;align-items:center;justify-content:center;width:36px;height:100%;cursor:pointer;color:#fff;">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                <path d="M4 4h16v2H4V4Zm0 5h16v2H4V9Zm0 5h10v2H4v-2Z"/>
+              </svg>
+            </div>
+          `,
+          click: () => openSubtitleList(),
         },
       ],
     }
@@ -310,8 +357,8 @@ const setupPlayer = async () => {
         const isInitial = props.initialSeek && Math.abs(resumePos - props.initialSeek) < 0.1
         ElMessage.info(
           isInitial
-            ? `跳转到书签 ${formatTime(resumePos)}`
-            : `已跳转到上次位置 ${formatTime(resumePos)}`,
+            ? `跳转到书签 ${formatSeconds(resumePos)}`
+            : `已跳转到上次位置 ${formatSeconds(resumePos)}`,
         )
       }
 
@@ -334,6 +381,17 @@ const setupPlayer = async () => {
       errorMsg.value =
         '该视频在当前浏览器无法解码播放(可能是编码不兼容),请关闭此弹窗后使用「本地播放」中的' +
         '「复制播放链接」或「用 IINA 打开」等方式在本地播放器中打开。'
+    })
+
+    // 字幕轨道加载完成后同步 cues(供"字幕明细"面板展示,不需要自己解析
+    // srt/ass 文件,Artplayer 已经转成标准 vtt 并解析进浏览器原生 TextTrack)
+    player.on('subtitleLoad', (cues: VTTCue[]) => {
+      subtitleCues.value = cues || []
+    })
+
+    // 实时更新当前播放时间,供字幕明细面板高亮"正在播放"的那一行
+    player.on('video:timeupdate', () => {
+      if (player) currentTime.value = player.currentTime || 0
     })
 
     progressTimer = window.setInterval(() => {
@@ -367,6 +425,7 @@ const loadSubtitle = async (sub: SubtitleInfo) => {
       escape: true,
     })
     activeSubId.value = sub.id
+    activeSubtitleName.value = sub.language_hint || sub.filename
   } catch (e) {
     console.warn('[PlayerDialog] subtitle load failed:', e)
   }
@@ -413,20 +472,11 @@ const removeCustomSubtitle = async (sub: SubtitleInfo, ev: Event) => {
   ElMessage.success('已删除')
 }
 
-const formatTime = (s: number) => {
-  if (!s || !Number.isFinite(s)) return '0:00'
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = Math.floor(s % 60)
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-    : `${m}:${String(sec).padStart(2, '0')}`
-}
-
 const closeSubtitle = () => {
   if (player?.subtitle) {
     player.subtitle.show = false
     activeSubId.value = null
+    activeSubtitleName.value = ''
   }
 }
 
@@ -502,6 +552,14 @@ onBeforeUnmount(() => {
         <el-button size="small" :icon="Upload" :loading="uploadingSubtitle" @click="triggerSubtitlePick">
           上传字幕
         </el-button>
+        <el-button
+          v-if="activeSubId !== null"
+          size="small"
+          :icon="Notebook"
+          @click="openSubtitleList"
+        >
+          字幕明细
+        </el-button>
       </div>
     </div>
 
@@ -509,6 +567,14 @@ onBeforeUnmount(() => {
       v-model="bookmarkDrawerOpen"
       :media-id="mediaId"
       :file-asset-id="fileAssetId"
+      :current-time="currentTime"
+      @jump="onJumpTo"
+    />
+
+    <SubtitleListDrawer
+      v-model="subtitleListOpen"
+      :cues="subtitleCues"
+      :active-name="activeSubtitleName"
       :current-time="currentTime"
       @jump="onJumpTo"
     />

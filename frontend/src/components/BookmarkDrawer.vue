@@ -24,6 +24,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Position, Bell } from '@element-plus/icons-vue'
 import { bookmarksApi, type Bookmark } from '@/api/bookmarks'
 import { tagsApi, type Tag } from '@/api/tags'
+import { formatSeconds } from '@/utils/time'
 
 interface Props {
   modelValue: boolean
@@ -109,19 +110,9 @@ watch(
 // ------------------------------------------------------------
 // 行为
 // ------------------------------------------------------------
-const formatTime = (s: number) => {
-  if (!s || !Number.isFinite(s)) return '0:00'
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = Math.floor(s % 60)
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-    : `${m}:${String(sec).padStart(2, '0')}`
-}
-
 const onJump = (b: Bookmark) => {
   emit('jump', b.position_seconds)
-  ElMessage.success(`跳转到 ${formatTime(b.position_seconds)}`)
+  ElMessage.success(`跳转到 ${formatSeconds(b.position_seconds)}`)
 }
 
 const openCreate = () => {
@@ -257,7 +248,7 @@ onMounted(() => {
           <span>书签 ({{ bookmarks.length }})</span>
         </div>
         <el-button type="primary" :icon="Plus" size="small" @click="onAddFromCurrent">
-          在 {{ formatTime(currentTime) }} 添加
+          在 {{ formatSeconds(currentTime) }} 添加
         </el-button>
       </div>
 
@@ -276,7 +267,7 @@ onMounted(() => {
               class="bm-time"
               @click="onJump(b)"
             >
-              {{ formatTime(b.position_seconds) }}
+              {{ formatSeconds(b.position_seconds) }}
             </el-button>
             <div class="bm-title" :title="b.title">{{ b.title }}</div>
           </div>
@@ -322,7 +313,7 @@ onMounted(() => {
             :precision="1"
             style="width: 160px"
           />
-          <span class="hint">秒 · 当前 = {{ formatTime(form.position_seconds) }}</span>
+          <span class="hint">秒 · 当前 = {{ formatSeconds(form.position_seconds) }}</span>
           <el-button
             v-if="editingId === null"
             link
